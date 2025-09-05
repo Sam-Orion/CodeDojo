@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeDojo</title>
+    <!-- We are adding Tailwind CSS for quick and easy styling. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col">
+
+    <!-- Header Section: For joining a room -->
+    <header class="bg-gray-800 p-4 shadow-md flex items-center space-x-4">
+        <h1 class="text-xl font-bold">CodeDojo</h1>
+        <div class="flex-grow"></div>
+        <input id="roomIdInput" type="text" placeholder="Enter Room ID" class="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <button id="joinBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-4 rounded">
+            Join Session
+        </button>
+    </header>
+
+    <!-- Editor Section: This div will contain our code editor. -->
+    <!-- The `flex-grow` class makes it take up all available vertical space. -->
+    <main id="editor-container" class="flex-grow"></main>
+
+    <!-- Monaco Editor Loader Script -->
+    <!-- This script is responsible for loading all the necessary files for the Monaco Editor. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.33.0/min/vs/loader.min.js"></script>
+
+    <!-- Our Application's Logic -->
+    <script>
+        // --- Step 1: Get references to our HTML elements ---
+        const roomIdInput = document.getElementById('roomIdInput');
+        const joinBtn = document.getElementById('joinBtn');
+        const editorContainer = document.getElementById('editor-container');
+        let editor; // This variable will hold our editor instance
+
+        // --- Step 2: Configure and load the Monaco Editor ---
+        // `require.config` tells the loader where to find the editor's files.
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.33.0/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            // This function runs once the editor's files are loaded.
+            editor = monaco.editor.create(editorContainer, {
+                value: `// Welcome to CodeDojo, your own Collaborative IDE!\n// Enter a Room ID and click "Join Session" to start.`,
+                language: 'javascript', // We'll default to JavaScript
+                theme: 'vs-dark',       // A nice dark theme
+                automaticLayout: true   // Makes the editor resize automatically
+            });
+            console.log("Monaco Editor loaded successfully.");
+        });
+
+        // --- Step 3: Add an event listener to our "Join" button ---
+        // For now, it will just print the Room ID to the console.
+        // This confirms our UI is wired up correctly before we add real-time logic.
+        joinBtn.addEventListener('click', () => {
+            const roomId = roomIdInput.value.trim();
+            if (!roomId) {
+                alert('Please enter a Room ID.');
+                return;
+            }
+            console.log(`Attempting to join room: ${roomId}`);
+            // Later, this is where we will connect to the WebSocket server.
+        });
+
+    </script>
+</body>
+</html>
