@@ -1,14 +1,21 @@
 const WebSocket = require('ws');
 const logger = require('../utils/logger');
-const { wsConnectionsActive, wsMessagesTotal } = require('../utils/metrics');
+const { wsConnectionsActive, wsMessagesTotal, otOperationTotal } = require('../utils/metrics');
 const config = require('../config/env');
+const roomManagerService = require('./room-manager.service');
+const otService = require('./ot.service');
+const persistenceService = require('./persistence.service');
+const { MessageValidator, MessageTypes } = require('./message-validator.service');
 
 class WebSocketService {
   constructor() {
     this.wss = null;
-    this.rooms = new Map();
     this.clients = new Map();
     this.heartbeatInterval = null;
+    this.messageValidator = new MessageValidator();
+    this.roomManager = roomManagerService;
+    this.otService = otService;
+    this.persistenceService = persistenceService;
   }
 
   initialize(server) {
@@ -19,6 +26,7 @@ class WebSocketService {
 
     this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
     this.startHeartbeat();
+    this.roomManager.initializeCleanup(60000); // Cleanup every 60 seconds
 
     logger.info('WebSocket server initialized');
   }
@@ -62,14 +70,48 @@ class WebSocketService {
   handleMessage(ws, message) {
     try {
       const data = JSON.parse(message);
-      wsMessagesTotal.inc({ type: 'received', event: data.type || 'unknown' });
+
+      // Validate message
+      const validation = this.messageValidator.validate(data);
+      if (!validation.valid) {
+        this.sendMessage(
+          ws,
+          this.messageValidator.buildErrorMessage(
+            new Error(validation.error),
+            data.roomId,
+            data.clientId
+          )
+        );
+        return;
+      }
+
+      wsMessagesTotal.inc({ type: 'received', event: data.type });
 
       logger.debug(`WebSocket message received`, {
         clientId: ws.id,
         type: data.type,
+        roomId: data.roomId,
       });
 
       switch (data.type) {
+        case MessageTypes.JOIN_ROOM:
+          this.handleJoinRoom(ws, data);
+          break;
+        case MessageTypes.LEAVE_ROOM:
+          this.handleLeaveRoom(ws, data);
+          break;
+        case MessageTypes.OT_OP:
+          this.handleOTOperation(ws, data);
+          break;
+        case MessageTypes.CURSOR_UPDATE:
+          this.handleCursorUpdate(ws, data);
+          break;
+        case MessageTypes.SYNC_STATE:
+          this.handleSyncState(ws, data);
+          break;
+        case MessageTypes.ACK:
+          this.handleAck(ws, data);
+          break;
         case 'collaboration:join':
           this.handleCollaborationJoin(ws, data);
           break;
@@ -100,6 +142,297 @@ class WebSocketService {
     }
   }
 
+  // OT-specific handlers
+
+  handleJoinRoom(ws, data) {
+    const { roomId, userId, clientId, userInfo } = data;
+
+    try {
+      // Check rate limit
+      const room = this.roomManager.getRoom(roomId);
+      if (!room) {
+        this.roomManager.joinRoom(roomId, clientId, ws, userId);
+      } else {
+        const joinResult = this.roomManager.joinRoom(roomId, clientId, ws, userId);
+        if (!joinResult.success) {
+          this.sendMessage(
+            ws,
+            this.messageValidator.buildErrorMessage(
+              new Error(joinResult.reason || 'Failed to join room'),
+              roomId,
+              clientId
+            )
+          );
+          return;
+        }
+      }
+
+      const room2 = this.roomManager.getRoom(roomId);
+      const snapshot = this.otService.getSnapshot(roomId);
+
+      // Track client in room
+      if (!ws.rooms) {
+        ws.rooms = new Set();
+      }
+      ws.rooms.add(roomId);
+
+      logger.info('Client joined room', {
+        roomId,
+        clientId,
+        userId,
+        participantCount: room2.connections.size,
+      });
+
+      // Send join confirmation with snapshot
+      this.sendMessage(ws, {
+        type: 'JOIN_ROOM_ACK',
+        roomId,
+        clientId,
+        version: snapshot.version,
+        content: snapshot.content,
+        participants: room2.getParticipants(),
+      });
+
+      // Broadcast participant joined to others
+      this.broadcastToRoom(roomId, clientId, {
+        type: 'PARTICIPANT_JOINED',
+        roomId,
+        clientId,
+        userId,
+        participants: room2.getParticipants(),
+        userInfo,
+      });
+
+      wsMessagesTotal.inc({ type: 'sent', event: 'JOIN_ROOM_ACK' });
+    } catch (error) {
+      logger.error('Error handling join room', { roomId, clientId, error });
+      this.sendMessage(ws, this.messageValidator.buildErrorMessage(error, roomId, clientId));
+    }
+  }
+
+  handleLeaveRoom(ws, data) {
+    const { roomId, clientId } = data;
+
+    try {
+      const result = this.roomManager.leaveRoom(roomId, clientId);
+
+      if (result.success) {
+        ws.rooms?.delete(roomId);
+
+        logger.info('Client left room', { roomId, clientId });
+
+        // Broadcast participant left to others
+        this.broadcastToRoom(roomId, null, {
+          type: 'PARTICIPANT_LEFT',
+          roomId,
+          clientId,
+        });
+
+        // Send leave confirmation
+        this.sendMessage(ws, {
+          type: 'LEAVE_ROOM_ACK',
+          roomId,
+          clientId,
+        });
+      }
+    } catch (error) {
+      logger.error('Error handling leave room', { roomId, clientId, error });
+      this.sendMessage(ws, this.messageValidator.buildErrorMessage(error, roomId, clientId));
+    }
+  }
+
+  handleOTOperation(ws, data) {
+    const { roomId, clientId, operation, userId } = data;
+
+    try {
+      const room = this.roomManager.getRoom(roomId);
+      if (!room) {
+        throw new Error('Room not found');
+      }
+
+      // Check rate limit
+      const rateLimitResult = room.applyRateLimit(clientId);
+      if (!rateLimitResult.allowed) {
+        this.sendMessage(
+          ws,
+          this.messageValidator.buildErrorMessage(
+            new Error(rateLimitResult.reason),
+            roomId,
+            clientId
+          )
+        );
+
+        if (rateLimitResult.backpressured) {
+          // Send backpressure signal
+          this.sendMessage(ws, {
+            type: 'BACKPRESSURE',
+            roomId,
+            clientId,
+            message: 'Server is backpressured, please slow down',
+          });
+        }
+        return;
+      }
+
+      // Update activity
+      room.updateActivity(clientId);
+
+      // Create operation object with metadata
+      const op = {
+        id: operation.id,
+        clientId,
+        version: operation.version,
+        type: operation.type,
+        position: operation.position,
+        content: operation.content,
+        userId,
+        timestamp: Date.now(),
+      };
+
+      // Apply OT transformation
+      const result = this.otService.applyOperation(roomId, op);
+
+      if (!result.success) {
+        throw new Error('Failed to apply operation');
+      }
+
+      // Persist operation asynchronously
+      this.persistenceService.saveOperation(roomId, op).catch((err) => {
+        logger.error('Failed to persist operation', { roomId, operationId: op.id, err });
+      });
+
+      // Send ack to sender
+      this.sendMessage(
+        ws,
+        this.messageValidator.buildAckMessage(roomId, clientId, operation.id, result.version)
+      );
+
+      // Broadcast operation to other clients
+      this.broadcastToRoom(roomId, clientId, {
+        type: 'OT_OP_BROADCAST',
+        roomId,
+        operation: result.operation,
+        version: result.version,
+        senderClientId: clientId,
+      });
+
+      wsMessagesTotal.inc({ type: 'sent', event: 'ACK' });
+      otOperationTotal.inc({ type: operation.type, status: 'broadcast' });
+    } catch (error) {
+      logger.error('Error handling OT operation', { roomId, clientId, error });
+      this.sendMessage(ws, this.messageValidator.buildErrorMessage(error, roomId, clientId));
+      otOperationTotal.inc({ type: data.operation?.type || 'unknown', status: 'error' });
+    }
+  }
+
+  handleCursorUpdate(ws, data) {
+    const { roomId, clientId, cursor, userId } = data;
+
+    try {
+      const room = this.roomManager.getRoom(roomId);
+      if (!room) {
+        throw new Error('Room not found');
+      }
+
+      // Update cursor in room
+      room.updateCursor(clientId, cursor);
+      room.updateActivity(clientId);
+
+      // Save cursor state to MongoDB
+      if (userId) {
+        this.persistenceService.saveCursorState(roomId, userId, clientId, cursor).catch((err) => {
+          logger.debug('Failed to persist cursor state', {
+            roomId,
+            userId,
+            err,
+          });
+        });
+      }
+
+      // Broadcast cursor update to other clients
+      this.broadcastToRoom(roomId, clientId, {
+        type: 'CURSOR_UPDATE_BROADCAST',
+        roomId,
+        clientId,
+        userId,
+        cursor,
+      });
+
+      wsMessagesTotal.inc({ type: 'sent', event: 'CURSOR_UPDATE_BROADCAST' });
+    } catch (error) {
+      logger.error('Error handling cursor update', { roomId, clientId, error });
+      this.sendMessage(ws, this.messageValidator.buildErrorMessage(error, roomId, clientId));
+    }
+  }
+
+  handleSyncState(ws, data) {
+    const { roomId, clientId, fromVersion } = data;
+
+    try {
+      const room = this.roomManager.getRoom(roomId);
+      if (!room) {
+        throw new Error('Room not found');
+      }
+
+      const snapshot = this.otService.getSnapshot(roomId);
+      let operations = [];
+
+      // Get operations since the specified version
+      if (fromVersion !== undefined && fromVersion < snapshot.version) {
+        operations = this.otService.getOperationsSince(roomId, clientId, fromVersion);
+      }
+
+      // Get cursor states
+      this.persistenceService.getCursorStates(roomId).then((cursorStates) => {
+        this.sendMessage(ws, {
+          type: 'SYNC_STATE_RESPONSE',
+          roomId,
+          clientId,
+          snapshot: {
+            version: snapshot.version,
+            content: snapshot.content,
+          },
+          operations,
+          cursorStates: cursorStates.map((cs) => ({
+            userId: cs.userId,
+            clientId: cs.clientId,
+            cursor: cs.cursor,
+          })),
+          participants: room.getParticipants(),
+        });
+
+        wsMessagesTotal.inc({ type: 'sent', event: 'SYNC_STATE_RESPONSE' });
+      });
+
+      room.updateActivity(clientId);
+    } catch (error) {
+      logger.error('Error handling sync state', { roomId, clientId, error });
+      this.sendMessage(ws, this.messageValidator.buildErrorMessage(error, roomId, clientId));
+    }
+  }
+
+  handleAck(ws, data) {
+    const { roomId, clientId, operationId } = data;
+
+    try {
+      this.otService.acknowledgeOperation(roomId, clientId, operationId);
+      logger.debug('Operation acknowledged', { roomId, clientId, operationId });
+    } catch (error) {
+      logger.error('Error handling ack', { roomId, clientId, error });
+    }
+  }
+
+  broadcastToRoom(roomId, excludeClientId, message) {
+    const room = this.roomManager.getRoom(roomId);
+    if (!room) return;
+
+    const connections = room.broadcast(message, excludeClientId);
+    for (const { ws } of connections) {
+      this.sendMessage(ws, message);
+    }
+  }
+
+  // Legacy collaboration handlers (keeping for backward compatibility)
   handleCollaborationJoin(ws, data) {
     const { roomId } = data;
 
@@ -111,32 +444,48 @@ class WebSocketService {
       return;
     }
 
-    if (!this.rooms.has(roomId)) {
-      this.rooms.set(roomId, {
-        clients: new Set(),
-        content: '',
+    try {
+      // Use new room manager
+      const userId = `user_${ws.id}`;
+      const result = this.roomManager.joinRoom(roomId, ws.id, ws, userId);
+
+      if (!result.success) {
+        this.sendMessage(ws, {
+          type: 'error',
+          message: result.reason || 'Failed to join room',
+        });
+        return;
+      }
+
+      const snapshot = this.otService.getSnapshot(roomId);
+
+      if (!ws.rooms) {
+        ws.rooms = new Set();
+      }
+      ws.rooms.add(roomId);
+
+      logger.info(`Client ${ws.id} joined collaboration room: ${roomId}`);
+
+      this.sendMessage(ws, {
+        type: 'collaboration:joined',
+        roomId,
+        content: snapshot.content,
+        participants: result.participantCount,
+      });
+
+      this.broadcastToRoom(roomId, ws.id, {
+        type: 'collaboration:participant-joined',
+        roomId,
+        clientId: ws.id,
+        participants: result.participantCount,
+      });
+    } catch (error) {
+      logger.error('Error in collaboration join', { roomId, error });
+      this.sendMessage(ws, {
+        type: 'error',
+        message: 'Failed to join room',
       });
     }
-
-    const room = this.rooms.get(roomId);
-    room.clients.add(ws);
-    ws.rooms.add(roomId);
-
-    logger.info(`Client ${ws.id} joined collaboration room: ${roomId}`);
-
-    this.sendMessage(ws, {
-      type: 'collaboration:joined',
-      roomId,
-      content: room.content,
-      participants: room.clients.size,
-    });
-
-    this.broadcast(roomId, ws, {
-      type: 'collaboration:participant-joined',
-      roomId,
-      clientId: ws.id,
-      participants: room.clients.size,
-    });
   }
 
   handleCollaborationUpdate(ws, data) {
@@ -150,28 +499,59 @@ class WebSocketService {
       return;
     }
 
-    const room = this.rooms.get(roomId);
-    if (!room) {
+    try {
+      const currentRoom = this.roomManager.getRoom(roomId);
+      if (!currentRoom) {
+        this.sendMessage(ws, {
+          type: 'error',
+          message: 'Room not found',
+        });
+        return;
+      }
+
+      // Create and apply operation
+      const op = {
+        id: `op_${Date.now()}_${Math.random()}`,
+        clientId: ws.id,
+        version: this.otService.getSnapshot(roomId).version,
+        type: 'insert',
+        position: 0,
+        content,
+        userId: currentRoom.clientIdToUserId.get(ws.id),
+        timestamp: Date.now(),
+      };
+
+      const result = this.otService.applyOperation(roomId, op);
+
+      this.broadcastToRoom(roomId, ws.id, {
+        type: 'collaboration:update',
+        roomId,
+        content: result.content,
+        clientId: ws.id,
+        version: result.version,
+      });
+    } catch (error) {
+      logger.error('Error in collaboration update', { roomId, error });
       this.sendMessage(ws, {
         type: 'error',
-        message: 'Room not found',
+        message: 'Failed to update collaboration',
       });
-      return;
     }
-
-    room.content = content;
-
-    this.broadcast(roomId, ws, {
-      type: 'collaboration:update',
-      roomId,
-      content,
-      clientId: ws.id,
-    });
   }
 
   handleCollaborationLeave(ws, data) {
     const { roomId } = data;
-    this.removeClientFromRoom(ws, roomId);
+    try {
+      this.roomManager.leaveRoom(roomId, ws.id);
+      ws.rooms?.delete(roomId);
+      this.broadcastToRoom(roomId, null, {
+        type: 'collaboration:participant-left',
+        roomId,
+        clientId: ws.id,
+      });
+    } catch (error) {
+      logger.error('Error in collaboration leave', { roomId, error });
+    }
   }
 
   handleTerminalInput(ws, data) {
@@ -195,43 +575,56 @@ class WebSocketService {
   handleDisconnection(ws) {
     logger.info(`WebSocket client disconnected: ${ws.id}`);
 
-    ws.rooms.forEach((roomId) => {
-      this.removeClientFromRoom(ws, roomId);
-    });
+    // Leave all rooms
+    if (ws.rooms) {
+      ws.rooms.forEach((roomId) => {
+        try {
+          this.roomManager.leaveRoom(roomId, ws.id);
+          this.broadcastToRoom(roomId, null, {
+            type: 'collaboration:participant-left',
+            roomId,
+            clientId: ws.id,
+          });
+        } catch (error) {
+          logger.error('Error leaving room on disconnect', { roomId, error });
+        }
+      });
+    }
 
     this.clients.delete(ws.id);
     wsConnectionsActive.dec();
   }
 
   removeClientFromRoom(ws, roomId) {
-    const room = this.rooms.get(roomId);
-    if (room) {
-      room.clients.delete(ws);
-      ws.rooms.delete(roomId);
+    try {
+      const result = this.roomManager.leaveRoom(roomId, ws.id);
+      if (result.success) {
+        ws.rooms?.delete(roomId);
 
-      this.broadcast(roomId, null, {
-        type: 'collaboration:participant-left',
-        roomId,
-        clientId: ws.id,
-        participants: room.clients.size,
-      });
+        this.broadcastToRoom(roomId, null, {
+          type: 'collaboration:participant-left',
+          roomId,
+          clientId: ws.id,
+          participants: result.participantCount,
+        });
 
-      if (room.clients.size === 0) {
-        logger.info(`Room ${roomId} is empty, removing it`);
-        this.rooms.delete(roomId);
+        if (result.isEmpty) {
+          logger.info(`Room ${roomId} is empty, removed`);
+        }
       }
+    } catch (error) {
+      logger.error('Error removing client from room', { roomId, error });
     }
   }
 
   broadcast(roomId, sender, message) {
-    const room = this.rooms.get(roomId);
+    const room = this.roomManager.getRoom(roomId);
     if (!room) return;
 
-    room.clients.forEach((client) => {
-      if (client !== sender && client.readyState === WebSocket.OPEN) {
-        this.sendMessage(client, message);
-      }
-    });
+    const connections = room.broadcast(message, sender?.id);
+    for (const { ws } of connections) {
+      this.sendMessage(ws, message);
+    }
   }
 
   sendMessage(ws, message) {
@@ -262,6 +655,10 @@ class WebSocketService {
   shutdown() {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
+    }
+
+    if (this.roomManager) {
+      this.roomManager.shutdown();
     }
 
     if (this.wss) {

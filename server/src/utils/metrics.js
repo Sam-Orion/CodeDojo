@@ -39,11 +39,40 @@ const dbQueryDuration = new client.Histogram({
   buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1],
 });
 
+const otOperationLatency = new client.Histogram({
+  name: 'ot_operation_latency_ms',
+  help: 'Latency of OT operations in milliseconds',
+  labelNames: [],
+  buckets: [1, 5, 10, 25, 50, 100, 250, 500],
+});
+
+const otOperationTotal = new client.Counter({
+  name: 'ot_operations_total',
+  help: 'Total number of OT operations',
+  labelNames: ['type', 'status'],
+});
+
+const otQueueDepth = new client.Gauge({
+  name: 'ot_queue_depth',
+  help: 'Current depth of the OT operation queue',
+  labelNames: [],
+});
+
+const otConflictsResolved = new client.Counter({
+  name: 'ot_conflicts_resolved_total',
+  help: 'Total number of conflicts resolved',
+  labelNames: ['strategy'],
+});
+
 register.registerMetric(httpRequestDuration);
 register.registerMetric(httpRequestTotal);
 register.registerMetric(wsConnectionsActive);
 register.registerMetric(wsMessagesTotal);
 register.registerMetric(dbQueryDuration);
+register.registerMetric(otOperationLatency);
+register.registerMetric(otOperationTotal);
+register.registerMetric(otQueueDepth);
+register.registerMetric(otConflictsResolved);
 
 module.exports = {
   register,
@@ -52,4 +81,8 @@ module.exports = {
   wsConnectionsActive,
   wsMessagesTotal,
   dbQueryDuration,
+  otOperationLatency,
+  otOperationTotal,
+  otQueueDepth,
+  otConflictsResolved,
 };
