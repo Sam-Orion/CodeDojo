@@ -1,16 +1,31 @@
 {
-  "name": "codedojo",
+  "name": "codedojo-workspace",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "CodeDojo - A Real-time Collaborative IDE",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" --ignore-path .prettierignore",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" --ignore-path .prettierignore",
+    "test": "npm run test --workspaces",
+    "prepare": "husky install"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "express": "^5.1.0",
-    "ws": "^8.18.3"
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.1.1",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   }
 }
