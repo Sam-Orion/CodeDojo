@@ -230,7 +230,7 @@ npm install package-name --workspace-root --save-dev
 
 ### Environment Variables
 
-See `.env.example` for available options:
+See `.env.example` for available options. Cloud compute and LLM provider keys are optional—add them only when you plan to enable those integrations.
 
 **Server Configuration:**
 
@@ -247,7 +247,7 @@ See `.env.example` for available options:
 - `OAUTH_CLIENT_SECRET` - OAuth provider client secret
 - `OAUTH_REDIRECT_URI` - OAuth redirect URL
 
-**Cloud & AI Services:**
+**Cloud & AI Services (optional):**
 
 - `AWS_ACCESS_KEY_ID` - AWS access key
 - `AWS_SECRET_ACCESS_KEY` - AWS secret key

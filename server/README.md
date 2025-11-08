@@ -45,7 +45,7 @@ npm run format
 
 ## Environment Variables
 
-See `.env.example` at the root of the workspace for available configuration options.
+See `.env.example` at the root of the workspace for available configuration options. Cloud compute and LLM provider credentials are optional—add them only if you plan to use those integrations.
 
 - `PORT`: Server port (default: 3000)
 - `NODE_ENV`: Environment (development, production)
