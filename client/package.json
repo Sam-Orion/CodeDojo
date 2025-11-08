@@ -1,0 +1,35 @@
+{
+  "name": "@codedojo/client",
+  "version": "1.0.0",
+  "description": "CodeDojo Client - Real-time collaborative IDE frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'Client development server not yet configured'",
+    "build": "echo 'Client build not yet configured'",
+    "lint": "eslint src/",
+    "test": "echo 'No tests specified yet'",
+    "format": "prettier --write \"src/**/*.{js,jsx,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,json}\""
+  },
+  "keywords": [
+    "collaborative",
+    "ide",
+    "codedojo",
+    "websocket",
+    "real-time",
+    "monaco-editor"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

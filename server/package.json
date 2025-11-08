@@ -1,0 +1,37 @@
+{
+  "name": "@codedojo/server",
+  "version": "1.0.0",
+  "description": "CodeDojo Server - Real-time collaborative IDE backend",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node src/index.js",
+    "build": "echo 'No build required for server'",
+    "lint": "eslint src/",
+    "test": "echo 'No tests specified yet'",
+    "format": "prettier --write \"src/**/*.{js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,json}\""
+  },
+  "keywords": [
+    "collaborative",
+    "ide",
+    "codedojo",
+    "websocket",
+    "real-time"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
