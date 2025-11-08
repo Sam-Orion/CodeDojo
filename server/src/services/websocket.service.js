@@ -6,6 +6,7 @@ const roomManagerService = require('./room-manager.service');
 const otService = require('./ot.service');
 const persistenceService = require('./persistence.service');
 const { MessageValidator, MessageTypes } = require('./message-validator.service');
+const terminalOrchestratorService = require('./terminal-orchestrator.service');
 
 class WebSocketService {
   constructor() {
@@ -112,6 +113,15 @@ class WebSocketService {
         case MessageTypes.ACK:
           this.handleAck(ws, data);
           break;
+        case MessageTypes.TERMINAL_CREATE:
+          this.handleTerminalCreate(ws, data);
+          break;
+        case MessageTypes.TERMINAL_INPUT:
+          this.handleTerminalInput(ws, data);
+          break;
+        case MessageTypes.TERMINAL_RESIZE:
+          this.handleTerminalResize(ws, data);
+          break;
         case 'collaboration:join':
           this.handleCollaborationJoin(ws, data);
           break;
@@ -122,10 +132,10 @@ class WebSocketService {
           this.handleCollaborationLeave(ws, data);
           break;
         case 'terminal:input':
-          this.handleTerminalInput(ws, data);
+          this.handleTerminalInputLegacy(ws, data);
           break;
         case 'terminal:resize':
-          this.handleTerminalResize(ws, data);
+          this.handleTerminalResizeLegacy(ws, data);
           break;
         case 'ping':
           this.sendMessage(ws, { type: 'pong' });
@@ -554,19 +564,123 @@ class WebSocketService {
     }
   }
 
-  handleTerminalInput(ws, data) {
-    logger.debug('Terminal input received (placeholder)', {
+  async handleTerminalCreate(ws, data) {
+    try {
+      const result = await terminalOrchestratorService.createTerminalSession({
+        userId: data.userId || ws.id,
+        roomId: data.roomId,
+        language: data.language,
+        file: data.file,
+        workspaceDir: data.workspaceDir,
+        isRepl: data.isRepl || false,
+        mode: data.mode || 'auto',
+        useContainer: data.useContainer !== false,
+        env: data.env || {},
+        metadata: data.metadata || {},
+      });
+
+      const session = terminalOrchestratorService.getSession(result.sessionId);
+      const executor = session.executor;
+
+      if (executor) {
+        if (executor.type === 'pty' && executor.ptyProcess) {
+          executor.ptyProcess.onData((data) => {
+            this.sendMessage(ws, {
+              type: MessageTypes.TERMINAL_OUTPUT,
+              sessionId: result.sessionId,
+              data,
+            });
+          });
+
+          executor.ptyProcess.onExit(({ exitCode, signal }) => {
+            this.sendMessage(ws, {
+              type: MessageTypes.TERMINAL_EXIT,
+              sessionId: result.sessionId,
+              exitCode,
+              signal,
+            });
+          });
+        } else if (executor.type === 'container' && executor.stream) {
+          executor.stream.on('data', (chunk) => {
+            this.sendMessage(ws, {
+              type: MessageTypes.TERMINAL_OUTPUT,
+              sessionId: result.sessionId,
+              data: chunk.toString('utf8'),
+            });
+          });
+
+          executor.stream.on('end', () => {
+            this.sendMessage(ws, {
+              type: MessageTypes.TERMINAL_EXIT,
+              sessionId: result.sessionId,
+              exitCode: 0,
+            });
+          });
+        }
+      }
+
+      this.sendMessage(ws, {
+        type: MessageTypes.TERMINAL_CREATE,
+        sessionId: result.sessionId,
+        mode: result.mode,
+        status: 'running',
+        language: result.language,
+      });
+
+      logger.info(`Terminal session created for client ${ws.id}`, {
+        sessionId: result.sessionId,
+      });
+    } catch (error) {
+      logger.error('Error creating terminal session:', error);
+      this.sendMessage(ws, {
+        type: MessageTypes.TERMINAL_ERROR,
+        error: error.message,
+        code: 'TERMINAL_CREATE_ERROR',
+      });
+    }
+  }
+
+  async handleTerminalInput(ws, data) {
+    try {
+      await terminalOrchestratorService.sendInput(data.sessionId, data.data);
+    } catch (error) {
+      logger.error('Error sending terminal input:', error);
+      this.sendMessage(ws, {
+        type: MessageTypes.TERMINAL_ERROR,
+        sessionId: data.sessionId,
+        error: error.message,
+        code: 'TERMINAL_INPUT_ERROR',
+      });
+    }
+  }
+
+  async handleTerminalResize(ws, data) {
+    try {
+      await terminalOrchestratorService.resizeTerminal(data.sessionId, data.cols, data.rows);
+    } catch (error) {
+      logger.error('Error resizing terminal:', error);
+      this.sendMessage(ws, {
+        type: MessageTypes.TERMINAL_ERROR,
+        sessionId: data.sessionId,
+        error: error.message,
+        code: 'TERMINAL_RESIZE_ERROR',
+      });
+    }
+  }
+
+  handleTerminalInputLegacy(ws, data) {
+    logger.debug('Terminal input received (legacy placeholder)', {
       clientId: ws.id,
       data,
     });
     this.sendMessage(ws, {
       type: 'terminal:output',
-      message: 'Terminal functionality not yet implemented',
+      message: 'Terminal functionality not yet implemented. Use TERMINAL_CREATE message type.',
     });
   }
 
-  handleTerminalResize(ws, data) {
-    logger.debug('Terminal resize received (placeholder)', {
+  handleTerminalResizeLegacy(ws, data) {
+    logger.debug('Terminal resize received (legacy placeholder)', {
       clientId: ws.id,
       data,
     });
@@ -574,6 +688,19 @@ class WebSocketService {
 
   handleDisconnection(ws) {
     logger.info(`WebSocket client disconnected: ${ws.id}`);
+
+    // Cleanup terminal sessions for this user
+    const userSessions = terminalOrchestratorService.getUserSessions(ws.id);
+    userSessions.forEach(async (session) => {
+      try {
+        await terminalOrchestratorService.terminateSession(session.id);
+      } catch (error) {
+        logger.error('Error terminating terminal session on disconnect', {
+          sessionId: session.id,
+          error,
+        });
+      }
+    });
 
     // Leave all rooms
     if (ws.rooms) {

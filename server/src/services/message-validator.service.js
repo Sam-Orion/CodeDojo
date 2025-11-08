@@ -7,6 +7,12 @@ const MessageTypes = {
   ERROR: 'ERROR',
   ACK: 'ACK',
   PRESENCE_UPDATE: 'PRESENCE_UPDATE',
+  TERMINAL_CREATE: 'TERMINAL_CREATE',
+  TERMINAL_INPUT: 'TERMINAL_INPUT',
+  TERMINAL_RESIZE: 'TERMINAL_RESIZE',
+  TERMINAL_OUTPUT: 'TERMINAL_OUTPUT',
+  TERMINAL_EXIT: 'TERMINAL_EXIT',
+  TERMINAL_ERROR: 'TERMINAL_ERROR',
 };
 
 const operationTypes = ['insert', 'delete'];
@@ -167,6 +173,61 @@ class MessageValidator {
           }
           if (typeof msg.clientId !== 'string' || msg.clientId.trim() === '') {
             throw new ValidationError('clientId must be a non-empty string');
+          }
+        },
+      },
+
+      TERMINAL_CREATE: {
+        required: ['type', 'clientId', 'language'],
+        optional: [
+          'userId',
+          'roomId',
+          'file',
+          'workspaceDir',
+          'isRepl',
+          'mode',
+          'useContainer',
+          'env',
+          'metadata',
+        ],
+        validate: (msg) => {
+          if (typeof msg.clientId !== 'string' || msg.clientId.trim() === '') {
+            throw new ValidationError('clientId must be a non-empty string');
+          }
+          if (typeof msg.language !== 'string' || msg.language.trim() === '') {
+            throw new ValidationError('language must be a non-empty string');
+          }
+          if (msg.mode && !['local', 'cloud', 'auto'].includes(msg.mode)) {
+            throw new ValidationError('mode must be one of: local, cloud, auto');
+          }
+        },
+      },
+
+      TERMINAL_INPUT: {
+        required: ['type', 'sessionId', 'data'],
+        optional: [],
+        validate: (msg) => {
+          if (typeof msg.sessionId !== 'string' || msg.sessionId.trim() === '') {
+            throw new ValidationError('sessionId must be a non-empty string');
+          }
+          if (typeof msg.data !== 'string') {
+            throw new ValidationError('data must be a string');
+          }
+        },
+      },
+
+      TERMINAL_RESIZE: {
+        required: ['type', 'sessionId', 'cols', 'rows'],
+        optional: [],
+        validate: (msg) => {
+          if (typeof msg.sessionId !== 'string' || msg.sessionId.trim() === '') {
+            throw new ValidationError('sessionId must be a non-empty string');
+          }
+          if (typeof msg.cols !== 'number' || msg.cols <= 0 || msg.cols > 500) {
+            throw new ValidationError('cols must be a number between 1 and 500');
+          }
+          if (typeof msg.rows !== 'number' || msg.rows <= 0 || msg.rows > 200) {
+            throw new ValidationError('rows must be a number between 1 and 200');
           }
         },
       },
