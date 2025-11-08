@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "node src/server.js",
     "build": "echo 'No build required for server'",
-    "lint": "eslint src/",
-    "test": "echo 'No tests specified yet'",
-    "format": "prettier --write \"src/**/*.{js,json}\"",
-    "format:check": "prettier --check \"src/**/*.{js,json}\""
+    "lint": "eslint src/ tests/",
+    "test": "mocha tests/**/*.test.js --timeout 60000",
+    "test:ot": "mocha tests/ot.integration.test.js --timeout 60000",
+    "format": "prettier --write \"src/**/*.{js,json}\" \"tests/**/*.js\"",
+    "format:check": "prettier --check \"src/**/*.{js,json}\" \"tests/**/*.js\""
   },
   "keywords": [
     "collaborative",
@@ -37,6 +38,7 @@
   "devDependencies": {
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
+    "mocha": "^10.2.0",
     "mongodb-memory-server": "^10.3.0",
     "prettier": "^3.1.1"
   },
