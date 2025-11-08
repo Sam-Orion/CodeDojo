@@ -1,51 +1,299 @@
 # CodeDojo Server
 
-Backend server for CodeDojo - a real-time collaborative IDE powered by Express and WebSockets.
+Production-ready Express 5 backend with MongoDB integration and WebSocket support for the CodeDojo collaborative IDE platform.
 
-## Overview
+## Features
 
-The server provides:
+✅ **Express 5** with security middleware (Helmet, CORS, Compression)  
+✅ **MongoDB** integration with Mongoose (with in-memory fallback for development)  
+✅ **WebSocket Server** for real-time collaboration  
+✅ **Structured Logging** with Winston and correlation IDs  
+✅ **Prometheus Metrics** for monitoring  
+✅ **Centralized Error Handling** with stack traces in development  
+✅ **Modular Architecture** with clean separation of concerns  
+✅ **Environment Validation** using Zod schema  
+✅ **Graceful Shutdown** handling  
+✅ **Health Check** and metrics endpoints
 
-- HTTP endpoints for serving static assets
-- WebSocket server for real-time code synchronization
-- Room-based session management with in-memory storage
-- Broadcast messaging for collaborative editing
+## Getting Started
 
-## Development
+### Prerequisites
+
+- Node.js >= 20.0.0
+- npm >= 10.0.0
+- MongoDB (optional - falls back to in-memory database)
 
 ### Installation
 
+1. **Install dependencies from the root:**
+
+   ```bash
+   npm install
+   ```
+
+2. **Set environment variables:**
+   Create a `.env` file in the **project root** (not in the server directory):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` with your configuration. Required:
+
+   ```env
+   MONGODB_URI=mongodb://localhost:27017/codedojo
+   ```
+
+3. **Run the development server:**
+
+   ```bash
+   npm run dev
+   ```
+
+   Or run only the server:
+
+   ```bash
+   npm run dev -w server
+   ```
+
+   The server will start on [http://localhost:3000](http://localhost:3000).
+
+## API Endpoints
+
+### Health Check
+
 ```bash
-npm install
+curl http://localhost:3000/api/v1/health
 ```
 
-### Running Locally
+Response:
 
-```bash
-npm run dev
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "uptime": 123.45,
+  "environment": "development",
+  "version": "1.0.0",
+  "services": {
+    "database": "healthy",
+    "websocket": "healthy"
+  }
+}
 ```
 
-The server runs on http://localhost:3000 by default. Set the `PORT` environment variable to change the port.
-
-### Building & Testing
+### Metrics (Prometheus)
 
 ```bash
-npm run build
-npm run test
-npm run lint
-npm run format
+curl http://localhost:3000/api/v1/health/metrics
+```
+
+### Authentication (Placeholder)
+
+- `POST /api/v1/auth/register` - User registration (not implemented)
+- `POST /api/v1/auth/login` - User login (not implemented)
+- `POST /api/v1/auth/logout` - User logout (not implemented)
+- `GET /api/v1/auth/me` - Get current user (not implemented)
+- `POST /api/v1/auth/refresh` - Refresh token (not implemented)
+
+## WebSocket Events
+
+### Collaboration
+
+**Join Room:**
+
+```json
+{
+  "type": "collaboration:join",
+  "roomId": "room-123"
+}
+```
+
+**Update Content:**
+
+```json
+{
+  "type": "collaboration:update",
+  "roomId": "room-123",
+  "content": "console.log('Hello');"
+}
+```
+
+**Leave Room:**
+
+```json
+{
+  "type": "collaboration:leave",
+  "roomId": "room-123"
+}
+```
+
+### Terminal (Placeholder)
+
+**Terminal Input:**
+
+```json
+{
+  "type": "terminal:input",
+  "command": "ls -la"
+}
+```
+
+**Terminal Resize:**
+
+```json
+{
+  "type": "terminal:resize",
+  "rows": 24,
+  "cols": 80
+}
+```
+
+### Utility
+
+**Ping:**
+
+```json
+{
+  "type": "ping"
+}
+```
+
+Response:
+
+```json
+{
+  "type": "pong"
+}
 ```
 
 ## Architecture
 
-- **Express Server**: HTTP server for static assets and API routes
-- **WebSocket Server**: Handles real-time client connections and messaging
-- **Room Management**: In-memory storage of collaborative sessions with connected clients and shared content
-- **Message Broadcasting**: Synchronizes code changes across all connected clients in a room
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed documentation of the modular architecture.
+
+### Directory Structure
+
+```
+server/src/
+├── app.js                    # Express application
+├── server.js                 # HTTP/WebSocket server
+├── config/                   # Configuration
+│   ├── env.js               # Environment validation
+│   ├── database.js          # MongoDB connection
+│   └── mockDatabase.js      # In-memory MongoDB
+├── routes/                   # API routes
+├── controllers/              # Request handlers
+├── services/                 # Business logic
+│   └── websocket.service.js # WebSocket management
+├── models/                   # Mongoose models
+│   ├── User.js
+│   ├── Document.js
+│   ├── Room.js
+│   └── FileMetadata.js
+├── middlewares/              # Express middleware
+│   ├── correlationId.js
+│   ├── requestLogger.js
+│   ├── metrics.js
+│   ├── auth.js
+│   └── errorHandler.js
+└── utils/                    # Utilities
+    ├── logger.js
+    ├── asyncHandler.js
+    ├── correlationId.js
+    └── metrics.js
+```
+
+## Database Models
+
+- **User**: Authentication and user profiles
+- **Document**: Code documents and files
+- **Room**: Collaboration rooms
+- **FileMetadata**: File storage metadata
+
+All models include timestamps and appropriate indexes.
+
+## Development
+
+### Running Tests
+
+```bash
+npm test -w server
+```
+
+### Linting
+
+```bash
+npm run lint -w server
+```
+
+### Formatting
+
+```bash
+npm run format -w server
+```
 
 ## Environment Variables
 
-See `.env.example` at the root of the workspace for available configuration options. Cloud compute and LLM provider credentials are optional—add them only if you plan to use those integrations.
+| Variable                | Required | Default     | Description                                |
+| ----------------------- | -------- | ----------- | ------------------------------------------ |
+| `NODE_ENV`              | No       | development | Environment (development/production/test)  |
+| `PORT`                  | No       | 3000        | Server port                                |
+| `MONGODB_URI`           | Yes      | -           | MongoDB connection string                  |
+| `LOG_LEVEL`             | No       | info        | Logging level (error/warn/info/http/debug) |
+| `CORS_ORIGIN`           | No       | \*          | CORS allowed origins                       |
+| `WS_HEARTBEAT_INTERVAL` | No       | 30000       | WebSocket ping interval (ms)               |
+| `WS_MAX_PAYLOAD`        | No       | 10485760    | Max WebSocket message size (bytes)         |
+| `JWT_SECRET`            | No       | -           | JWT secret for authentication (future)     |
+| `SESSION_SECRET`        | No       | -           | Session secret (future)                    |
 
-- `PORT`: Server port (default: 3000)
-- `NODE_ENV`: Environment (development, production)
+## Monitoring
+
+### Prometheus Metrics
+
+- `http_request_duration_seconds` - HTTP request latency
+- `http_requests_total` - Total HTTP requests
+- `ws_connections_active` - Active WebSocket connections
+- `ws_messages_total` - WebSocket message counts
+- `db_query_duration_seconds` - Database query latency (stub)
+
+### Logging
+
+Structured JSON logs with Winston including:
+
+- Request/response logging with correlation IDs
+- Error logging with stack traces
+- WebSocket connection tracking
+- Database connection status
+
+## Testing WebSocket
+
+Run the included test script:
+
+```bash
+node test-websocket.js
+```
+
+## Deployment
+
+1. Set `NODE_ENV=production`
+2. Ensure MongoDB is properly configured
+3. Set secure secrets for JWT/session
+4. Configure CORS_ORIGIN to your domain
+5. Enable HTTPS/WSS in production
+6. Set up log aggregation
+7. Configure Prometheus metrics scraping
+
+## Future Enhancements
+
+- [ ] JWT/OAuth authentication
+- [ ] File upload/storage service
+- [ ] Terminal emulation with pty
+- [ ] AI-assisted code completion
+- [ ] Real-time cursor tracking
+- [ ] Code execution sandboxing
+- [ ] Document versioning
+- [ ] User presence indicators
+
+## License
+
+ISC
