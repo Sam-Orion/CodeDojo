@@ -20,6 +20,7 @@ const envSchema = z.object({
   AZURE_LOCATION: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  AI_ENCRYPTION_KEY: z.string().optional(),
   JWT_SECRET: z.string().min(32, 'JWT secret must be at least 32 characters').optional(),
   SESSION_SECRET: z.string().min(32, 'Session secret must be at least 32 characters').optional(),
   WS_HEARTBEAT_INTERVAL: z.string().regex(/^\d+$/).transform(Number).default('30000'),

@@ -13,6 +13,11 @@ const MessageTypes = {
   TERMINAL_OUTPUT: 'TERMINAL_OUTPUT',
   TERMINAL_EXIT: 'TERMINAL_EXIT',
   TERMINAL_ERROR: 'TERMINAL_ERROR',
+  AI_COMPLETION_REQUEST: 'AI_COMPLETION_REQUEST',
+  AI_COMPLETION_CANCEL: 'AI_COMPLETION_CANCEL',
+  AI_EXPLAIN_REQUEST: 'AI_EXPLAIN_REQUEST',
+  AI_REFACTOR_REQUEST: 'AI_REFACTOR_REQUEST',
+  AI_FEEDBACK: 'AI_FEEDBACK',
 };
 
 const operationTypes = ['insert', 'delete'];
@@ -228,6 +233,124 @@ class MessageValidator {
           }
           if (typeof msg.rows !== 'number' || msg.rows <= 0 || msg.rows > 200) {
             throw new ValidationError('rows must be a number between 1 and 200');
+          }
+        },
+      },
+
+      AI_COMPLETION_REQUEST: {
+        required: ['type', 'userId', 'sessionId', 'context'],
+        optional: ['provider', 'model', 'maxTokens', 'temperature', 'instruction', 'useCache'],
+        validate: (msg) => {
+          if (typeof msg.userId !== 'string' || msg.userId.trim() === '') {
+            throw new ValidationError('userId must be a non-empty string');
+          }
+          if (typeof msg.sessionId !== 'string' || msg.sessionId.trim() === '') {
+            throw new ValidationError('sessionId must be a non-empty string');
+          }
+          if (!msg.context || typeof msg.context !== 'object') {
+            throw new ValidationError('context must be an object');
+          }
+          if (
+            msg.maxTokens &&
+            (typeof msg.maxTokens !== 'number' || msg.maxTokens <= 0 || msg.maxTokens > 8000)
+          ) {
+            throw new ValidationError('maxTokens must be a number between 1 and 8000');
+          }
+          if (
+            msg.temperature &&
+            (typeof msg.temperature !== 'number' || msg.temperature < 0 || msg.temperature > 2)
+          ) {
+            throw new ValidationError('temperature must be a number between 0 and 2');
+          }
+          if (msg.instruction && typeof msg.instruction !== 'string') {
+            throw new ValidationError('instruction must be a string');
+          }
+        },
+      },
+
+      AI_COMPLETION_CANCEL: {
+        required: ['type', 'userId', 'sessionId'],
+        optional: [],
+        validate: (msg) => {
+          if (typeof msg.userId !== 'string' || msg.userId.trim() === '') {
+            throw new ValidationError('userId must be a non-empty string');
+          }
+          if (typeof msg.sessionId !== 'string' || msg.sessionId.trim() === '') {
+            throw new ValidationError('sessionId must be a non-empty string');
+          }
+        },
+      },
+
+      AI_EXPLAIN_REQUEST: {
+        required: ['type', 'userId', 'sessionId', 'code'],
+        optional: ['language'],
+        validate: (msg) => {
+          if (typeof msg.userId !== 'string' || msg.userId.trim() === '') {
+            throw new ValidationError('userId must be a non-empty string');
+          }
+          if (typeof msg.sessionId !== 'string' || msg.sessionId.trim() === '') {
+            throw new ValidationError('sessionId must be a non-empty string');
+          }
+          if (typeof msg.code !== 'string' || msg.code.trim() === '') {
+            throw new ValidationError('code must be a non-empty string');
+          }
+          if (msg.code.length > 50000) {
+            throw new ValidationError('code must be <= 50000 characters');
+          }
+          if (msg.language && typeof msg.language !== 'string') {
+            throw new ValidationError('language must be a string');
+          }
+        },
+      },
+
+      AI_REFACTOR_REQUEST: {
+        required: ['type', 'userId', 'sessionId', 'code'],
+        optional: ['language', 'refactorType'],
+        validate: (msg) => {
+          if (typeof msg.userId !== 'string' || msg.userId.trim() === '') {
+            throw new ValidationError('userId must be a non-empty string');
+          }
+          if (typeof msg.sessionId !== 'string' || msg.sessionId.trim() === '') {
+            throw new ValidationError('sessionId must be a non-empty string');
+          }
+          if (typeof msg.code !== 'string' || msg.code.trim() === '') {
+            throw new ValidationError('code must be a non-empty string');
+          }
+          if (msg.code.length > 50000) {
+            throw new ValidationError('code must be <= 50000 characters');
+          }
+          if (msg.language && typeof msg.language !== 'string') {
+            throw new ValidationError('language must be a string');
+          }
+          if (
+            msg.refactorType &&
+            !['improve', 'optimize', 'modernize', 'simplify'].includes(msg.refactorType)
+          ) {
+            throw new ValidationError(
+              'refactorType must be one of: improve, optimize, modernize, simplify'
+            );
+          }
+        },
+      },
+
+      AI_FEEDBACK: {
+        required: ['type', 'requestId', 'helpful'],
+        optional: ['userId', 'rating', 'comment'],
+        validate: (msg) => {
+          if (typeof msg.requestId !== 'string' || msg.requestId.trim() === '') {
+            throw new ValidationError('requestId must be a non-empty string');
+          }
+          if (typeof msg.helpful !== 'boolean') {
+            throw new ValidationError('helpful must be a boolean');
+          }
+          if (msg.userId && typeof msg.userId !== 'string') {
+            throw new ValidationError('userId must be a string');
+          }
+          if (msg.rating && (typeof msg.rating !== 'number' || msg.rating < 1 || msg.rating > 5)) {
+            throw new ValidationError('rating must be a number between 1 and 5');
+          }
+          if (msg.comment && typeof msg.comment !== 'string') {
+            throw new ValidationError('comment must be a string');
           }
         },
       },
