@@ -6,7 +6,7 @@ require('dotenv').config();
 const mockFetch = sinon.stub();
 global.fetch = mockFetch;
 
-const OpenAIProvider = require('../../src/services/ai/openai.provider');
+const OpenAIProvider = require('../src/services/ai/openai.provider');
 
 describe('OpenAI Provider', () => {
   let provider;
@@ -84,17 +84,24 @@ describe('OpenAI Provider', () => {
 
   describe('streamCompletion', () => {
     it('should stream completion successfully', async () => {
+      let readCount = 0;
       const mockResponse = {
         ok: true,
         body: {
           getReader: () => ({
-            read: () =>
-              Promise.resolve({
-                done: false,
-                value: new TextEncoder().encode(
-                  'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
-                ),
-              }),
+            read: () => {
+              if (readCount === 0) {
+                readCount += 1;
+                return Promise.resolve({
+                  done: false,
+                  value: new TextEncoder().encode(
+                    'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
+                  ),
+                });
+              }
+              return Promise.resolve({ done: true, value: null });
+            },
+            releaseLock: () => {},
           }),
         },
       };
@@ -132,6 +139,7 @@ describe('OpenAI Provider', () => {
                 done: true,
                 value: null,
               }),
+            releaseLock: () => {},
           }),
         },
       };

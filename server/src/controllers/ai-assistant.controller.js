@@ -1,6 +1,6 @@
 const aiAssistantService = require('../services/ai-assistant.service');
-const { logger } = require('../utils/logger');
-const { asyncHandler } = require('../utils/async-handler');
+const logger = require('../utils/logger');
+const asyncHandler = require('../utils/asyncHandler');
 
 /**
  * Stream code completion

@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
-const { AICredential } = require('../../src/models');
-const aiCredentialsController = require('../../src/controllers/ai-credentials.controller');
+const { AICredential } = require('../src/models');
+const aiCredentialsController = require('../src/controllers/ai-credentials.controller');
 
 describe('AI Credentials Controller', () => {
   let sandbox;
@@ -222,19 +222,15 @@ describe('AI Credentials Controller', () => {
   describe('testCredential', () => {
     it('should test credential successfully', async () => {
       mockReq.params.id = 'cred123';
+      mockCredential.provider = 'openai';
+      mockCredential.isActive = true;
       sandbox.stub(AICredential, 'findOne').resolves(mockCredential);
 
-      // Mock OpenAI provider
-      const mockOpenAIProvider = {
-        completion: sandbox.stub().resolves({
-          content: 'Hello World',
-          usage: { total_tokens: 5 },
-        }),
-      };
-
-      sandbox
-        .stub(require('../../src/services/ai/openai.provider'), 'constructor')
-        .returns(mockOpenAIProvider);
+      const OpenAIProvider = require('../src/services/ai/openai.provider');
+      sandbox.stub(OpenAIProvider.prototype, 'completion').resolves({
+        content: 'Hello World',
+        usage: { total_tokens: 5 },
+      });
 
       await aiCredentialsController.testCredential(mockReq, mockRes);
 
@@ -248,6 +244,30 @@ describe('AI Credentials Controller', () => {
       ).to.be.true;
     });
 
+    it('should test gemini credential successfully', async () => {
+      mockReq.params.id = 'cred123';
+      mockCredential.provider = 'gemini';
+      mockCredential.isActive = true;
+      sandbox.stub(AICredential, 'findOne').resolves(mockCredential);
+
+      const GeminiProvider = require('../src/services/ai/gemini.provider');
+      sandbox.stub(GeminiProvider.prototype, 'completion').resolves({
+        content: 'Gemini response',
+        usage: { totalTokenCount: 7 },
+      });
+
+      await aiCredentialsController.testCredential(mockReq, mockRes);
+
+      expect(
+        mockRes.json.calledWith(
+          sinon.match({
+            success: true,
+            provider: 'gemini',
+          })
+        )
+      ).to.be.true;
+    });
+
     it('should return error for inactive credential', async () => {
       mockReq.params.id = 'cred123';
       mockCredential.isActive = false;
@@ -256,19 +276,17 @@ describe('AI Credentials Controller', () => {
       await aiCredentialsController.testCredential(mockReq, mockRes);
 
       expect(mockRes.status.calledWith(404)).to.be.true;
+      mockCredential.isActive = true;
     });
 
     it('should handle test failure', async () => {
       mockReq.params.id = 'cred123';
+      mockCredential.provider = 'openai';
+      mockCredential.isActive = true;
       sandbox.stub(AICredential, 'findOne').resolves(mockCredential);
 
-      const mockOpenAIProvider = {
-        completion: sandbox.stub().rejects(new Error('API Error')),
-      };
-
-      sandbox
-        .stub(require('../../src/services/ai/openai.provider'), 'constructor')
-        .returns(mockOpenAIProvider);
+      const OpenAIProvider = require('../src/services/ai/openai.provider');
+      sandbox.stub(OpenAIProvider.prototype, 'completion').rejects(new Error('API Error'));
 
       await aiCredentialsController.testCredential(mockReq, mockRes);
 

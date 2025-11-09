@@ -1,6 +1,6 @@
 const express = require('express');
 const aiCredentialsController = require('../controllers/ai-credentials.controller');
-const { authenticateToken } = require('../middlewares/auth.middleware');
+const { authenticateToken } = require('../middlewares/auth');
 
 const router = express.Router();
 

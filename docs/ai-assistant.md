@@ -8,7 +8,7 @@ The AI Assistant backend provides intelligent code completion, explanation, and 
 
 ## Features
 
-- **Multiple AI Provider Support**: OpenAI, Anthropic Claude, with extensible provider architecture
+- **Multiple AI Provider Support**: OpenAI, Anthropic Claude, Google Gemini, with extensible provider architecture
 - **Secure Credential Storage**: Encrypted API key storage per user with scoped access
 - **Streaming Responses**: Real-time token streaming for better UX
 - **Intelligent Caching**: LRU cache to reduce latency and costs
@@ -34,6 +34,7 @@ The AI Assistant backend provides intelligent code completion, explanation, and 
 3. **Provider Implementations**
    - **OpenAI Provider** (`services/ai/openai-provider.js`)
    - **Anthropic Provider** (`services/ai/anthropic-provider.js`)
+   - **Gemini Provider** (`services/ai/gemini.provider.js`)
 
 4. **AI Assistant Service** (`services/ai-assistant.service.js`)
    - Main service orchestrating AI operations
@@ -334,6 +335,9 @@ POST /api/v1/ai/credentials/:id/test
 # AI Provider Keys (for environment-based providers)
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=sk-gemini-...
+GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+GEMINI_MODEL=gemini-1.5-flash-latest
 
 # Encryption Key (required for production)
 AI_ENCRYPTION_KEY=32-byte-hex-key
@@ -390,6 +394,13 @@ JWT_SECRET=your-jwt-secret-min-32-chars
 {
   apiKey: 'sk-ant-...',
   baseURL: 'https://api.anthropic.com' // optional
+}
+
+// Gemini Provider
+{
+  apiKey: 'sk-gemini-...',
+  baseURL: 'https://generativelanguage.googleapis.com/v1beta', // optional
+  model: 'gemini-1.5-flash-latest' // optional
 }
 ```
 

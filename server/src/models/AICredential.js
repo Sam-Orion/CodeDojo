@@ -11,7 +11,7 @@ const aiCredentialSchema = new mongoose.Schema(
     provider: {
       type: String,
       required: true,
-      enum: ['openai', 'anthropic', 'azure-openai'],
+      enum: ['openai', 'anthropic', 'azure-openai', 'gemini'],
       index: true,
     },
     encryptedApiKey: {

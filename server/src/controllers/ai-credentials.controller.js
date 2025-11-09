@@ -1,6 +1,6 @@
 const { AICredential } = require('../models');
-const { logger } = require('../utils/logger');
-const { asyncHandler } = require('../utils/async-handler');
+const logger = require('../utils/logger');
+const asyncHandler = require('../utils/asyncHandler');
 
 /**
  * Create new AI credential
@@ -16,7 +16,7 @@ const createCredential = asyncHandler(async (req, res) => {
   }
 
   // Validate provider
-  const validProviders = ['openai', 'anthropic', 'azure-openai'];
+  const validProviders = ['openai', 'anthropic', 'azure-openai', 'gemini'];
   if (!validProviders.includes(provider)) {
     return res.status(400).json({
       error: `Invalid provider. Must be one of: ${validProviders.join(', ')}`,
@@ -207,6 +207,12 @@ const testCredential = asyncHandler(async (req, res) => {
     } else if (credential.provider === 'anthropic') {
       const AnthropicProvider = require('../services/ai/anthropic.provider');
       provider = new AnthropicProvider({
+        apiKey: credential.getApiKey(),
+        ...credential.metadata,
+      });
+    } else if (credential.provider === 'gemini') {
+      const GeminiProvider = require('../services/ai/gemini.provider');
+      provider = new GeminiProvider({
         apiKey: credential.getApiKey(),
         ...credential.metadata,
       });

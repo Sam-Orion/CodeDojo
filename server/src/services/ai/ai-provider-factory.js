@@ -1,6 +1,7 @@
 const OpenAIProvider = require('./openai.provider');
 const AnthropicProvider = require('./anthropic.provider');
-const { logger } = require('../../utils/logger');
+const GeminiProvider = require('./gemini.provider');
+const logger = require('../../utils/logger');
 
 /**
  * AI Provider Factory for managing different AI providers
@@ -53,6 +54,22 @@ class AIProviderFactory {
       return provider;
     } catch (error) {
       logger.error('Failed to register Anthropic provider', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Create and register Gemini provider
+   * @param {Object} config - Gemini configuration
+   * @param {boolean} isDefault - Whether this is the default provider
+   */
+  registerGemini(config, isDefault = false) {
+    try {
+      const provider = new GeminiProvider(config);
+      this.registerProvider('gemini', provider, isDefault);
+      return provider;
+    } catch (error) {
+      logger.error('Failed to register Gemini provider', { error: error.message });
       throw error;
     }
   }

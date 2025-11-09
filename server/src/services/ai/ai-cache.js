@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { logger } = require('../../utils/logger');
+const logger = require('../../utils/logger');
 
 /**
  * Simple in-memory LRU cache for AI responses

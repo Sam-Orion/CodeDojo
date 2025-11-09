@@ -1,7 +1,7 @@
 const aiProviderFactory = require('./ai/ai-provider-factory');
 const aiCache = require('./ai/ai-cache');
 const { AICredential } = require('../models');
-const { logger } = require('../utils/logger');
+const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -40,6 +40,15 @@ class AIAssistantService {
           baseURL: process.env.ANTHROPIC_BASE_URL,
         });
         logger.info('Anthropic provider initialized from environment');
+      }
+
+      if (process.env.GEMINI_API_KEY) {
+        aiProviderFactory.registerGemini({
+          apiKey: process.env.GEMINI_API_KEY,
+          baseURL: process.env.GEMINI_API_BASE_URL,
+          model: process.env.GEMINI_MODEL,
+        });
+        logger.info('Gemini provider initialized from environment');
       }
     } catch (error) {
       logger.error('Failed to initialize AI providers', { error: error.message });

@@ -1,5 +1,5 @@
 const BaseAIProvider = require('./base-ai-provider');
-const { logger } = require('../../utils/logger');
+const logger = require('../../utils/logger');
 
 /**
  * OpenAI AI Provider implementation

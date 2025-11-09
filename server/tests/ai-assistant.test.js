@@ -1,8 +1,8 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
-const aiAssistantService = require('../../src/services/ai-assistant.service');
-const { AICredential } = require('../../src/models');
-const aiProviderFactory = require('../../src/services/ai/ai-provider-factory');
+const aiAssistantService = require('../src/services/ai-assistant.service');
+const { AICredential } = require('../src/models');
+const aiProviderFactory = require('../src/services/ai/ai-provider-factory');
 
 describe('AI Assistant Service', () => {
   let sandbox;
