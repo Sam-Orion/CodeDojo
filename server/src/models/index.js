@@ -4,6 +4,8 @@ const Room = require('./Room');
 const FileMetadata = require('./FileMetadata');
 const TerminalAuditLog = require('./TerminalAuditLog');
 const AICredential = require('./AICredential');
+const StorageCredential = require('./StorageCredential');
+const StorageFileAudit = require('./StorageFileAudit');
 
 module.exports = {
   User,
@@ -12,4 +14,6 @@ module.exports = {
   FileMetadata,
   TerminalAuditLog,
   AICredential,
+  StorageCredential,
+  StorageFileAudit,
 };
