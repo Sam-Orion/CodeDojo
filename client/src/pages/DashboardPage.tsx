@@ -1,37 +1,86 @@
-import React from 'react';
+import { useState } from 'react';
 import { useAppSelector } from '../store';
+import Button from '../components/ui/Button';
+import Card, { CardHeader, CardBody, CardFooter } from '../components/ui/Card';
 
-const DashboardPage: React.FC = () => {
+const DashboardPage = () => {
   const { user } = useAppSelector((state) => state.auth);
+  const [projects] = useState([
+    { id: 1, name: 'My First Project', language: 'JavaScript', lastEdited: '2 hours ago' },
+    { id: 2, name: 'Python Tutorial', language: 'Python', lastEdited: 'yesterday' },
+    { id: 3, name: 'React Components', language: 'TypeScript', lastEdited: '3 days ago' },
+  ]);
 
   return (
-    <div className="dashboard-page">
-      <div className="dashboard-header">
-        <h1>Dashboard</h1>
-        <p>Welcome back, {user?.username}!</p>
+    <div className="flex flex-col gap-8 p-8">
+      <div>
+        <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Dashboard</h1>
+        <p className="text-lg text-gray-600 dark:text-gray-400">Welcome back, {user?.username}!</p>
       </div>
 
-      <div className="dashboard-content">
-        <div className="dashboard-section">
-          <h2>Recent Projects</h2>
-          <div className="project-grid">
-            <div className="project-card">
-              <h3>My First Project</h3>
-              <p>JavaScript • Last edited 2 hours ago</p>
-            </div>
-            <div className="project-card">
-              <h3>Python Tutorial</h3>
-              <p>Python • Last edited yesterday</p>
-            </div>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <Card>
+          <div className="text-center">
+            <div className="text-4xl font-bold text-primary-600 mb-2">{projects.length}</div>
+            <p className="text-gray-600 dark:text-gray-400">Active Projects</p>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-center">
+            <div className="text-4xl font-bold text-green-600 mb-2">12</div>
+            <p className="text-gray-600 dark:text-gray-400">Collaborators</p>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-center">
+            <div className="text-4xl font-bold text-blue-600 mb-2">28</div>
+            <p className="text-gray-600 dark:text-gray-400">Lines of Code</p>
+          </div>
+        </Card>
+      </div>
+
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Recent Projects</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {projects.map((project) => (
+              <Card key={project.id} isHoverable>
+                <CardHeader>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {project.name}
+                  </h3>
+                </CardHeader>
+                <CardBody>
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <span className="font-medium">Language:</span> {project.language}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <span className="font-medium">Last edited:</span> {project.lastEdited}
+                    </p>
+                  </div>
+                </CardBody>
+                <CardFooter className="space-x-2">
+                  <Button size="sm" variant="primary">
+                    Open
+                  </Button>
+                  <Button size="sm" variant="ghost">
+                    Edit
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
           </div>
         </div>
 
-        <div className="dashboard-section">
-          <h2>Quick Actions</h2>
-          <div className="action-buttons">
-            <button className="action-button">Create New Project</button>
-            <button className="action-button">Join Room</button>
-            <button className="action-button">Browse Templates</button>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="primary">Create New Project</Button>
+            <Button variant="secondary">Join Room</Button>
+            <Button variant="secondary">Browse Templates</Button>
           </div>
         </div>
       </div>
