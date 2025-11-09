@@ -7,6 +7,7 @@ const otService = require('./ot.service');
 const persistenceService = require('./persistence.service');
 const { MessageValidator, MessageTypes } = require('./message-validator.service');
 const terminalOrchestratorService = require('./terminal-orchestrator.service');
+const aiAssistantService = require('./ai-assistant.service');
 
 class WebSocketService {
   constructor() {
@@ -139,6 +140,21 @@ class WebSocketService {
           break;
         case 'ping':
           this.sendMessage(ws, { type: 'pong' });
+          break;
+        case MessageTypes.AI_COMPLETION_REQUEST:
+          this.handleAICompletionRequest(ws, data);
+          break;
+        case MessageTypes.AI_COMPLETION_CANCEL:
+          this.handleAICompletionCancel(ws, data);
+          break;
+        case MessageTypes.AI_EXPLAIN_REQUEST:
+          this.handleAIExplainRequest(ws, data);
+          break;
+        case MessageTypes.AI_REFACTOR_REQUEST:
+          this.handleAIRefactorRequest(ws, data);
+          break;
+        case MessageTypes.AI_FEEDBACK:
+          this.handleAIFeedback(ws, data);
           break;
         default:
           logger.warn(`Unknown WebSocket message type: ${data.type}`);
@@ -777,6 +793,226 @@ class WebSocketService {
 
   generateClientId() {
     return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // AI Assistant handlers
+
+  async handleAICompletionRequest(ws, data) {
+    try {
+      const { userId, sessionId, context, ...options } = data;
+
+      // Store request info for potential cancellation
+      ws.aiRequests = ws.aiRequests || new Map();
+      const requestKey = `${userId}:${sessionId}`;
+
+      // Cancel existing request if any
+      if (ws.aiRequests.has(requestKey)) {
+        aiAssistantService.cancelRequest(userId, sessionId);
+      }
+
+      const completionStream = aiAssistantService.streamCompletion({
+        userId,
+        sessionId,
+        context,
+        ...options,
+      });
+
+      ws.aiRequests.set(requestKey, true);
+
+      try {
+        for await (const chunk of completionStream) {
+          this.sendMessage(ws, {
+            type: 'AI_COMPLETION_CHUNK',
+            userId,
+            sessionId,
+            ...chunk,
+          });
+        }
+
+        // Send completion event
+        this.sendMessage(ws, {
+          type: 'AI_COMPLETION_DONE',
+          userId,
+          sessionId,
+        });
+      } finally {
+        ws.aiRequests.delete(requestKey);
+      }
+    } catch (error) {
+      logger.error('AI completion request error', { error: error.message, data });
+      this.sendMessage(ws, {
+        type: 'AI_COMPLETION_ERROR',
+        userId: data.userId,
+        sessionId: data.sessionId,
+        error: error.message,
+      });
+    }
+  }
+
+  handleAICompletionCancel(ws, data) {
+    try {
+      const { userId, sessionId } = data;
+
+      // Cancel in service
+      aiAssistantService.cancelRequest(userId, sessionId);
+
+      // Remove from client tracking
+      if (ws.aiRequests) {
+        ws.aiRequests.delete(`${userId}:${sessionId}`);
+      }
+
+      this.sendMessage(ws, {
+        type: 'AI_COMPLETION_CANCELLED',
+        userId,
+        sessionId,
+      });
+    } catch (error) {
+      logger.error('AI completion cancel error', { error: error.message, data });
+    }
+  }
+
+  async handleAIExplainRequest(ws, data) {
+    try {
+      const { userId, sessionId, code, language, ...options } = data;
+
+      ws.aiRequests = ws.aiRequests || new Map();
+      const requestKey = `${userId}:${sessionId}:explain`;
+
+      if (ws.aiRequests.has(requestKey)) {
+        this.sendMessage(ws, {
+          type: 'AI_EXPLAIN_ERROR',
+          userId,
+          sessionId,
+          error: 'Another explain request is already active',
+        });
+        return;
+      }
+
+      const explainStream = aiAssistantService.explainCode({
+        userId,
+        sessionId,
+        code,
+        language,
+        ...options,
+      });
+
+      ws.aiRequests.set(requestKey, true);
+
+      try {
+        for await (const chunk of explainStream) {
+          this.sendMessage(ws, {
+            type: 'AI_EXPLAIN_CHUNK',
+            userId,
+            sessionId,
+            ...chunk,
+          });
+        }
+
+        this.sendMessage(ws, {
+          type: 'AI_EXPLAIN_DONE',
+          userId,
+          sessionId,
+        });
+      } finally {
+        ws.aiRequests.delete(requestKey);
+      }
+    } catch (error) {
+      logger.error('AI explain request error', { error: error.message, data });
+      this.sendMessage(ws, {
+        type: 'AI_EXPLAIN_ERROR',
+        userId: data.userId,
+        sessionId: data.sessionId,
+        error: error.message,
+      });
+    }
+  }
+
+  async handleAIRefactorRequest(ws, data) {
+    try {
+      const { userId, sessionId, code, language, refactorType, ...options } = data;
+
+      ws.aiRequests = ws.aiRequests || new Map();
+      const requestKey = `${userId}:${sessionId}:refactor`;
+
+      if (ws.aiRequests.has(requestKey)) {
+        this.sendMessage(ws, {
+          type: 'AI_REFACTOR_ERROR',
+          userId,
+          sessionId,
+          error: 'Another refactor request is already active',
+        });
+        return;
+      }
+
+      const refactorStream = aiAssistantService.refactorCode({
+        userId,
+        sessionId,
+        code,
+        language,
+        refactorType,
+        ...options,
+      });
+
+      ws.aiRequests.set(requestKey, true);
+
+      try {
+        for await (const chunk of refactorStream) {
+          this.sendMessage(ws, {
+            type: 'AI_REFACTOR_CHUNK',
+            userId,
+            sessionId,
+            ...chunk,
+          });
+        }
+
+        this.sendMessage(ws, {
+          type: 'AI_REFACTOR_DONE',
+          userId,
+          sessionId,
+        });
+      } finally {
+        ws.aiRequests.delete(requestKey);
+      }
+    } catch (error) {
+      logger.error('AI refactor request error', { error: error.message, data });
+      this.sendMessage(ws, {
+        type: 'AI_REFACTOR_ERROR',
+        userId: data.userId,
+        sessionId: data.sessionId,
+        error: error.message,
+      });
+    }
+  }
+
+  handleAIFeedback(ws, data) {
+    try {
+      const { requestId, helpful, rating, comment, userId } = data;
+
+      // Log feedback for metrics
+      logger.info('AI feedback received via WebSocket', {
+        requestId,
+        userId,
+        helpful,
+        rating,
+        comment,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Acknowledge feedback
+      this.sendMessage(ws, {
+        type: 'AI_FEEDBACK_ACK',
+        requestId,
+        success: true,
+      });
+    } catch (error) {
+      logger.error('AI feedback error', { error: error.message, data });
+      this.sendMessage(ws, {
+        type: 'AI_FEEDBACK_ACK',
+        requestId: data.requestId,
+        success: false,
+        error: error.message,
+      });
+    }
   }
 
   shutdown() {

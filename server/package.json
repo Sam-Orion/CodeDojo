@@ -8,7 +8,7 @@
     "dev": "node src/server.js",
     "build": "echo 'No build required for server'",
     "lint": "eslint src/ tests/",
-    "test": "mocha tests/**/*.test.js --timeout 60000",
+    "test": "mocha --require tests/setup.js tests/**/*.test.js --timeout 60000",
     "test:ot": "mocha tests/ot.integration.test.js --timeout 60000",
     "format": "prettier --write \"src/**/*.{js,json}\" \"tests/**/*.js\"",
     "format:check": "prettier --check \"src/**/*.{js,json}\" \"tests/**/*.js\""
@@ -35,6 +35,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.19.3",
     "node-pty": "^1.0.0",
     "prom-client": "^15.1.3",
