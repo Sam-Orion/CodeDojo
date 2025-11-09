@@ -1,12 +1,15 @@
 import { Provider } from 'react-redux';
+import { BrowserRouter } from 'react-router-dom';
 import { store } from './store';
-import Layout from './components/Layout';
-import './styles/index.css';
+import Router from './router';
+import './styles/tailwind.css';
 
 function App() {
   return (
     <Provider store={store}>
-      <Layout />
+      <BrowserRouter>
+        <Router />
+      </BrowserRouter>
     </Provider>
   );
 }
