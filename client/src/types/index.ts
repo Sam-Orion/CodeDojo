@@ -166,3 +166,30 @@ export interface WebSocketMessage {
   payload: any;
   timestamp: number;
 }
+
+// Storage Provider types
+export type StorageProviderType = 'google_drive' | 'onedrive' | 'local';
+
+export interface StorageProvider {
+  id: string;
+  type: StorageProviderType;
+  name: string;
+  isConnected: boolean;
+  token?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  email?: string;
+  icon?: string;
+  lastAccessed?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StorageProviderState {
+  providers: StorageProvider[];
+  currentProviderId: string | null;
+  isLoading: boolean;
+  error: string | null;
+  isConnecting: boolean;
+  connectionError: string | null;
+}

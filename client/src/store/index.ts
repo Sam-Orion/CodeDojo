@@ -8,6 +8,7 @@ import collaborationSlice from './slices/collaborationSlice';
 import filesSlice from './slices/filesSlice';
 import terminalSlice from './slices/terminalSlice';
 import aiSlice from './slices/aiSlice';
+import storageProviderSlice from './slices/storageProviderSlice';
 
 // Zod schema for validating the entire Redux state
 export const RootStateSchema = z.object({
@@ -86,6 +87,14 @@ export const RootStateSchema = z.object({
     isLoading: z.boolean(),
     error: z.string().nullable(),
   }),
+  storageProvider: z.object({
+    providers: z.array(z.any()),
+    currentProviderId: z.string().nullable(),
+    isLoading: z.boolean(),
+    error: z.string().nullable(),
+    isConnecting: z.boolean(),
+    connectionError: z.string().nullable(),
+  }),
 });
 
 export type RootState = z.infer<typeof RootStateSchema>;
@@ -98,6 +107,7 @@ export const store = configureStore({
     files: filesSlice,
     terminal: terminalSlice,
     ai: aiSlice,
+    storageProvider: storageProviderSlice,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

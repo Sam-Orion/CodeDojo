@@ -49,6 +49,13 @@ const Sidebar = () => {
             isOpen={isOpen}
           />
           <SidebarLink
+            to="/storage-providers"
+            icon="☁️"
+            label="Storage"
+            isActive={isActive('/storage-providers')}
+            isOpen={isOpen}
+          />
+          <SidebarLink
             to="/settings"
             icon="⚙️"
             label="Settings"
