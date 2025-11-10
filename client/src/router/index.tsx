@@ -5,6 +5,8 @@ import DashboardPage from '../pages/DashboardPage';
 import MainLayout from '../components/layouts/MainLayout';
 import SettingsPage from '../pages/SettingsPage';
 import WorkspacePage from '../pages/WorkspacePage';
+import StorageProvidersPage from '../pages/StorageProvidersPage';
+import OAuthCallback from '../components/OAuthCallback';
 
 const Router = () => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
@@ -12,6 +14,7 @@ const Router = () => {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/oauth/callback" element={<OAuthCallback />} />
 
       {isAuthenticated ? (
         <Route element={<MainLayout />}>
@@ -19,6 +22,7 @@ const Router = () => {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/workspace/:roomId" element={<WorkspacePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/storage-providers" element={<StorageProvidersPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       ) : (
