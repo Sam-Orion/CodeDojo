@@ -1,0 +1,185 @@
+import { useRef, useEffect, useCallback, useState } from 'react';
+import Editor, { useMonaco } from '@monaco-editor/react';
+import { useAppDispatch, useAppSelector } from '../store';
+import {
+  setDocumentContent,
+  addPendingOperation,
+  pushUndoOperation,
+} from '../store/slices/collaborationSlice';
+import { Operation } from '../types';
+
+const generateId = (): string => {
+  return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+};
+
+interface MonacoEditorWrapperProps {
+  onOperationChange?: (operation: Operation) => void;
+  onCursorChange?: (cursor: { line: number; column: number }) => void;
+  readOnly?: boolean;
+  language?: string;
+  theme?: 'vs' | 'vs-dark' | 'hc-black';
+}
+
+const MonacoEditorWrapper = ({
+  onOperationChange,
+  onCursorChange,
+  readOnly = false,
+  language = 'javascript',
+  theme = 'vs-dark',
+}: MonacoEditorWrapperProps) => {
+  const monaco = useMonaco();
+  const editorRef = useRef<any>(null);
+  const [localVersion, setLocalVersion] = useState(0);
+  const dispatch = useAppDispatch();
+  const { documentContent, participants } = useAppSelector((state) => state.collaboration);
+  const userId = useAppSelector((state) => state.auth.user?.id);
+
+  useEffect(() => {
+    if (monaco) {
+      monaco.editor.defineTheme('custom-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [],
+        colors: {
+          'editor.background': '#1e1e1e',
+        },
+      });
+    }
+  }, [monaco]);
+
+  const handleEditorChange = useCallback(
+    (value: string | undefined) => {
+      if (value === undefined || value === documentContent) return;
+
+      const oldContent = documentContent;
+      const newContent = value;
+
+      let operation: Operation | null = null;
+
+      if (newContent.length > oldContent.length) {
+        const diff = newContent.slice(oldContent.length);
+        const position = oldContent.length - diff.length;
+        operation = {
+          id: generateId(),
+          type: 'insert',
+          position,
+          content: diff,
+          clientId: userId || '',
+          timestamp: Date.now(),
+          version: localVersion,
+        };
+      } else if (newContent.length < oldContent.length) {
+        const deleted = oldContent.slice(newContent.length);
+        operation = {
+          id: generateId(),
+          type: 'delete',
+          position: newContent.length,
+          content: deleted,
+          clientId: userId || '',
+          timestamp: Date.now(),
+          version: localVersion,
+        };
+      }
+
+      if (operation) {
+        dispatch(setDocumentContent(newContent));
+        dispatch(addPendingOperation(operation));
+        dispatch(pushUndoOperation(operation));
+        setLocalVersion(localVersion + 1);
+        if (onOperationChange) {
+          onOperationChange(operation);
+        }
+      }
+    },
+    [documentContent, localVersion, dispatch, onOperationChange, userId]
+  );
+
+  const handleCursorPositionChange = useCallback(() => {
+    if (!editorRef.current) return;
+
+    const position = editorRef.current.getPosition();
+    if (position && onCursorChange) {
+      onCursorChange({
+        line: position.lineNumber - 1,
+        column: position.column - 1,
+      });
+    }
+  }, [onCursorChange]);
+
+  useEffect(() => {
+    if (editorRef.current) {
+      const editor = editorRef.current;
+      editor.onDidChangeCursorPosition?.(handleCursorPositionChange);
+    }
+  }, [handleCursorPositionChange]);
+
+  const renderCursors = useCallback(() => {
+    if (!editorRef.current || !monaco) return;
+
+    const decorations: any[] = [];
+    participants.forEach((participant) => {
+      if (participant.cursor && participant.id !== userId) {
+        decorations.push({
+          range: new monaco.Range(
+            participant.cursor.line + 1,
+            participant.cursor.column + 1,
+            participant.cursor.line + 1,
+            participant.cursor.column + 2
+          ),
+          options: {
+            isWholeLine: false,
+            className: `cursor-${participant.id}`,
+            glyphMarginClassName: 'cursor-glyph',
+            glyphMarginHoverMessage: { value: participant.username },
+            backgroundColor: participant.color,
+            borderColor: participant.color,
+            borderStyle: 'solid',
+            borderWidth: '2px',
+          },
+        });
+      }
+    });
+
+    editorRef.current.deltaDecorations([], decorations);
+  }, [participants, monaco, userId]);
+
+  useEffect(() => {
+    renderCursors();
+  }, [participants, renderCursors]);
+
+  return (
+    <div className="flex flex-col h-full w-full">
+      <Editor
+        height="100%"
+        defaultLanguage={language}
+        language={language}
+        theme={theme}
+        value={documentContent}
+        onChange={handleEditorChange}
+        onMount={(editor) => {
+          editorRef.current = editor;
+          editor.focus();
+        }}
+        options={{
+          readOnly,
+          minimap: { enabled: true },
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          formatOnPaste: true,
+          formatOnType: true,
+          mouseWheelZoom: true,
+          bracketPairColorization: {
+            enabled: true,
+          } as any,
+          fontLigatures: true,
+          fontSize: 14,
+          lineHeight: 1.6,
+          wordWrap: 'on',
+          wrappingIndent: 'indent',
+        }}
+      />
+    </div>
+  );
+};
+
+export default MonacoEditorWrapper;

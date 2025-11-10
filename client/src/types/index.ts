@@ -44,9 +44,17 @@ export interface CursorPosition {
 
 export interface CollaborationState {
   currentRoom: Room | null;
-  participants: Participant[];
+  participants: ParticipantPresence[];
   isConnected: boolean;
   operationQueue: Operation[];
+  documentContent: string;
+  documentVersion: number;
+  operationHistory: Operation[];
+  pendingOperations: Operation[];
+  connectionStatus: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+  lastSyncTime: number | null;
+  undoStack: Operation[];
+  redoStack: Operation[];
 }
 
 export interface Operation {
@@ -57,7 +65,29 @@ export interface Operation {
   length?: number;
   attributes?: Record<string, any>;
   clientId: string;
+  userId?: string;
   timestamp: number;
+  version?: number;
+  acked?: boolean;
+}
+
+export interface Selection {
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+}
+
+export interface ParticipantPresence extends Participant {
+  color: string;
+  selection?: Selection;
+  lastActivity: number;
+}
+
+export interface DocumentState {
+  version: number;
+  content: string;
+  operationHistory: Operation[];
 }
 
 // File System types
