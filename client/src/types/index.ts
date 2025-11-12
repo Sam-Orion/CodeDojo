@@ -193,3 +193,15 @@ export interface StorageProviderState {
   isConnecting: boolean;
   connectionError: string | null;
 }
+
+// Toast types
+export interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  duration?: number;
+}
+
+export interface ToastState {
+  toasts: Toast[];
+}

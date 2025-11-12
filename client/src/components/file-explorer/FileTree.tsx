@@ -13,11 +13,19 @@ import {
   fetchFileSystem,
   readFile,
   setCurrentFile,
+  deleteFile,
+  renameFile,
+  copyFile,
+  downloadFile,
 } from '../../store/slices/filesSlice';
+import { addToast } from '../../store/slices/toastSlice';
 import { FileNode, StorageProvider } from '../../types';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import { LoadingOverlay } from '../ui/Loader';
+import ContextMenu, { ContextMenuAction } from './ContextMenu';
+import ConfirmModal from './ConfirmModal';
+import { copyToClipboard } from '../../utils/clipboard';
 
 interface FileTreeProps {
   onFileOpen?: (file: FileNode, content: string) => void;
@@ -197,6 +205,34 @@ const FileTree = ({ onFileOpen }: FileTreeProps) => {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [currentDirectoryPath, setCurrentDirectoryPath] = useState<string | null>(null);
 
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    position: { x: number; y: number };
+    node: FileNode | null;
+  }>({
+    visible: false,
+    position: { x: 0, y: 0 },
+    node: null,
+  });
+
+  // Modal states
+  const [renameModal, setRenameModal] = useState<{
+    visible: boolean;
+    node: FileNode | null;
+  }>({
+    visible: false,
+    node: null,
+  });
+
+  const [deleteModal, setDeleteModal] = useState<{
+    visible: boolean;
+    node: FileNode | null;
+  }>({
+    visible: false,
+    node: null,
+  });
+
   const rootPath = root?.path || null;
 
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -372,6 +408,118 @@ const FileTree = ({ onFileOpen }: FileTreeProps) => {
     [root]
   );
 
+  // Context menu handlers
+  const handleContextMenu = useCallback((event: MouseEvent, node: FileNode) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setContextMenu({
+      visible: true,
+      position: { x: event.clientX, y: event.clientY },
+      node,
+    });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu((prev) => ({ ...prev, visible: false }));
+  }, []);
+
+  const handleContextMenuAction = useCallback(
+    async (action: ContextMenuAction, node: FileNode) => {
+      try {
+        switch (action) {
+          case 'open':
+            if (node.type === 'file') {
+              await handleOpenFile(node);
+            }
+            break;
+
+          case 'rename':
+            setRenameModal({ visible: true, node });
+            break;
+
+          case 'delete':
+            setDeleteModal({ visible: true, node });
+            break;
+
+          case 'download':
+            if (node.type === 'file') {
+              await dispatch(downloadFile(node.path)).unwrap();
+              dispatch(addToast({ message: 'File downloaded successfully', type: 'success' }));
+            }
+            break;
+
+          case 'duplicate': {
+            const parentPath = getParentPath(node.path, rootPath);
+            if (parentPath) {
+              const extension =
+                node.type === 'file' ? node.name.substring(node.name.lastIndexOf('.')) : '';
+              const baseName =
+                node.type === 'file'
+                  ? node.name.substring(0, node.name.lastIndexOf('.'))
+                  : node.name;
+              const newName = `${baseName} copy${extension}`;
+              const newPath = `${parentPath}/${newName}`;
+
+              await dispatch(
+                copyFile({ sourcePath: node.path, destinationPath: newPath })
+              ).unwrap();
+              await dispatch(fetchFileSystem()).unwrap();
+              dispatch(addToast({ message: 'File duplicated successfully', type: 'success' }));
+            }
+            break;
+          }
+
+          case 'copyPath': {
+            const success = await copyToClipboard(node.path);
+            if (success) {
+              dispatch(addToast({ message: 'Path copied to clipboard', type: 'success' }));
+            } else {
+              dispatch(addToast({ message: 'Failed to copy path', type: 'error' }));
+            }
+            break;
+          }
+        }
+      } catch (error) {
+        dispatch(
+          addToast({
+            message: error instanceof Error ? error.message : 'Operation failed',
+            type: 'error',
+          })
+        );
+      }
+    },
+    [dispatch, handleOpenFile, rootPath]
+  );
+
+  const handleRenameConfirm = useCallback(
+    async (newName?: string) => {
+      if (!renameModal.node || !newName) return;
+
+      const parentPath = getParentPath(renameModal.node.path, rootPath);
+      if (!parentPath) return;
+
+      const newPath = `${parentPath}/${newName}`;
+
+      await dispatch(renameFile({ oldPath: renameModal.node.path, newPath })).unwrap();
+      await dispatch(fetchFileSystem()).unwrap();
+
+      dispatch(addToast({ message: 'File renamed successfully', type: 'success' }));
+      setRenameModal({ visible: false, node: null });
+    },
+    [dispatch, renameModal.node, rootPath]
+  );
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteModal.node) return;
+
+    await dispatch(deleteFile(deleteModal.node.path)).unwrap();
+    await dispatch(fetchFileSystem()).unwrap();
+
+    dispatch(addToast({ message: 'File deleted successfully', type: 'success' }));
+    setDeleteModal({ visible: false, node: null });
+  }, [dispatch, deleteModal.node]);
+
   const onKeyDown = useCallback(
     async (event: KeyboardEvent<HTMLDivElement>) => {
       if (!visibleNodes.length || !resolvedFocusedId) {
@@ -472,7 +620,8 @@ const FileTree = ({ onFileOpen }: FileTreeProps) => {
 
   const providerBadge = useMemo(() => {
     if (activeProvider) {
-      const preset = providerStyles[activeProvider.type] ?? providerStyles.local;
+      const preset =
+        providerStyles[activeProvider.type as StorageProvider['type']] ?? providerStyles.local;
       return (
         <div
           className={`inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-xs font-medium ${preset.bg} ${preset.text}`}
@@ -589,6 +738,7 @@ const FileTree = ({ onFileOpen }: FileTreeProps) => {
                     tabIndex={-1}
                     onClick={(event) => handleSelectNode(node, event)}
                     onDoubleClick={(event) => handleSelectNode(node, event)}
+                    onContextMenu={(event) => handleContextMenu(event, node)}
                     className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors ${
                       isActive
                         ? 'bg-primary-100 text-primary-800 dark:bg-primary-900/60 dark:text-primary-100'
@@ -635,6 +785,45 @@ const FileTree = ({ onFileOpen }: FileTreeProps) => {
         <div className="border-t border-gray-200 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
           Connect a storage provider to browse files.
         </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu.node && (
+        <ContextMenu
+          visible={contextMenu.visible}
+          position={contextMenu.position}
+          node={contextMenu.node}
+          onClose={closeContextMenu}
+          onAction={handleContextMenuAction}
+        />
+      )}
+
+      {/* Rename Modal */}
+      {renameModal.node && (
+        <ConfirmModal
+          isOpen={renameModal.visible}
+          onClose={() => setRenameModal({ visible: false, node: null })}
+          onConfirm={handleRenameConfirm}
+          title="Rename File/Folder"
+          message="Enter a new name for this file or folder."
+          confirmText="Rename"
+          type="rename"
+          node={renameModal.node}
+        />
+      )}
+
+      {/* Delete Modal */}
+      {deleteModal.node && (
+        <ConfirmModal
+          isOpen={deleteModal.visible}
+          onClose={() => setDeleteModal({ visible: false, node: null })}
+          onConfirm={handleDeleteConfirm}
+          title="Delete File/Folder"
+          message={`Are you sure you want to delete this ${deleteModal.node.type}?`}
+          confirmText="Delete"
+          type="delete"
+          node={deleteModal.node}
+        />
       )}
     </div>
   );

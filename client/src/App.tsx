@@ -2,6 +2,7 @@ import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 import { store } from './store';
 import Router from './router';
+import ToastProvider from './components/ui/ToastProvider';
 import './styles/tailwind.css';
 
 function App() {
@@ -9,6 +10,7 @@ function App() {
     <Provider store={store}>
       <BrowserRouter>
         <Router />
+        <ToastProvider />
       </BrowserRouter>
     </Provider>
   );

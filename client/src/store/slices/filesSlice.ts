@@ -74,6 +74,66 @@ export const deleteFile = createAsyncThunk('files/deleteFile', async (path: stri
   return path;
 });
 
+export const renameFile = createAsyncThunk(
+  'files/renameFile',
+  async ({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
+    const response = await fetch('/api/v1/files/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newPath }),
+    });
+    const data: ApiResponse<FileNode> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error || 'Failed to rename file');
+    }
+
+    return { oldPath, newPath, updatedNode: data.data };
+  }
+);
+
+export const copyFile = createAsyncThunk(
+  'files/copyFile',
+  async ({ sourcePath, destinationPath }: { sourcePath: string; destinationPath: string }) => {
+    const response = await fetch('/api/v1/files/copy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destinationPath }),
+    });
+    const data: ApiResponse<FileNode> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error || 'Failed to copy file');
+    }
+
+    return data.data;
+  }
+);
+
+export const downloadFile = createAsyncThunk('files/downloadFile', async (path: string) => {
+  const response = await fetch(`/api/v1/files/download?path=${encodeURIComponent(path)}`);
+
+  if (!response.ok) {
+    throw new Error('Failed to download file');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+
+  // Extract filename from path
+  const filename = path.split('/').pop() || 'download';
+  a.download = filename;
+
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+
+  return path;
+});
+
 const initialState: FileSystemState = {
   root: null,
   currentFile: null,
@@ -181,6 +241,31 @@ const filesSlice = createSlice({
       })
       .addCase(deleteFile.rejected, (state, action) => {
         state.error = action.error.message || 'Failed to delete file';
+      })
+      // Rename File
+      .addCase(renameFile.fulfilled, (state, action) => {
+        const { oldPath, updatedNode } = action.payload;
+        // Update open files paths
+        state.openFiles = state.openFiles.map((file) =>
+          file.path === oldPath ? { ...file, ...updatedNode } : file
+        );
+        if (state.currentFile?.path === oldPath) {
+          state.currentFile = { ...state.currentFile, ...updatedNode };
+        }
+      })
+      .addCase(renameFile.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to rename file';
+      })
+      // Copy File
+      .addCase(copyFile.fulfilled, () => {
+        // File tree will be refreshed to show the new file
+      })
+      .addCase(copyFile.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to copy file';
+      })
+      // Download File
+      .addCase(downloadFile.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to download file';
       });
   },
 });
