@@ -89,7 +89,7 @@ const TerminalPage: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <TerminalPanel wsManager={wsManager} defaultLanguage="bash" defaultMode="auto" />
+        <TerminalPanel wsManager={wsManager} defaultMode="auto" />
       </div>
 
       {/* Terminal Info Panel */}

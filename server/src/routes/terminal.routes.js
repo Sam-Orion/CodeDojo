@@ -43,6 +43,40 @@ router.get(
   })
 );
 
+router.post(
+  '/sessions',
+  asyncHandler(async (req, res) => {
+    const { language, file, workspaceDir, mode = 'auto', env = {} } = req.body;
+
+    if (!language) {
+      return res.status(400).json({
+        success: false,
+        error: 'language is required',
+      });
+    }
+
+    try {
+      const result = await terminalOrchestratorService.createTerminalSession({
+        language,
+        file,
+        workspaceDir,
+        mode,
+        env,
+      });
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Failed to create terminal session',
+      });
+    }
+  })
+);
+
 router.get(
   '/sessions',
   asyncHandler(async (req, res) => {
@@ -84,6 +118,84 @@ router.get(
       success: true,
       data: session,
     });
+  })
+);
+
+router.post(
+  '/sessions/:sessionId/input',
+  asyncHandler(async (req, res) => {
+    const { sessionId } = req.params;
+    const { input } = req.body;
+
+    if (!input) {
+      return res.status(400).json({
+        success: false,
+        error: 'input is required',
+      });
+    }
+
+    try {
+      await terminalOrchestratorService.sendInput(sessionId, input);
+      res.json({
+        success: true,
+        message: 'Input sent successfully',
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Failed to send input',
+      });
+    }
+  })
+);
+
+router.post(
+  '/sessions/:sessionId/abort',
+  asyncHandler(async (req, res) => {
+    const { sessionId } = req.params;
+
+    try {
+      await terminalOrchestratorService.sendInput(sessionId, '\u0003');
+      res.json({
+        success: true,
+        message: 'Abort signal sent',
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Failed to abort',
+      });
+    }
+  })
+);
+
+router.post(
+  '/validate-command',
+  asyncHandler(async (req, res) => {
+    const { command } = req.body;
+
+    if (!command) {
+      return res.status(400).json({
+        success: false,
+        error: 'command is required',
+      });
+    }
+
+    try {
+      const sanitized = terminalOrchestratorService.sanitizeInput(command);
+      res.json({
+        success: true,
+        data: {
+          valid: true,
+          command: sanitized,
+        },
+      });
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Invalid command',
+      });
+    }
   })
 );
 

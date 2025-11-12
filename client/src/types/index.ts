@@ -130,6 +130,8 @@ export interface TerminalSession {
   env: Record<string, string>;
   createdAt: string;
   lastActivity: string;
+  currentCommand?: string;
+  isExecuting?: boolean;
 }
 
 export interface TerminalState {
