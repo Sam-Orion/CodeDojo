@@ -9,6 +9,7 @@ import filesSlice from './slices/filesSlice';
 import terminalSlice from './slices/terminalSlice';
 import aiSlice from './slices/aiSlice';
 import storageProviderSlice from './slices/storageProviderSlice';
+import toastSlice from './slices/toastSlice';
 
 // Zod schema for validating the entire Redux state
 export const RootStateSchema = z.object({
@@ -95,6 +96,16 @@ export const RootStateSchema = z.object({
     isConnecting: z.boolean(),
     connectionError: z.string().nullable(),
   }),
+  toast: z.object({
+    toasts: z.array(
+      z.object({
+        id: z.string(),
+        message: z.string(),
+        type: z.enum(['success', 'error', 'warning', 'info']),
+        duration: z.number().optional(),
+      })
+    ),
+  }),
 });
 
 export type RootState = z.infer<typeof RootStateSchema>;
@@ -108,6 +119,7 @@ export const store = configureStore({
     terminal: terminalSlice,
     ai: aiSlice,
     storageProvider: storageProviderSlice,
+    toast: toastSlice,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
