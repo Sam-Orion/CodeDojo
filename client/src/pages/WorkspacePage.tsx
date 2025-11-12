@@ -16,6 +16,7 @@ import MonacoEditorWrapper from '../components/MonacoEditorWrapper';
 import ParticipantsList from '../components/ParticipantsList';
 import ConnectionStatus from '../components/ConnectionStatus';
 import EditorControls from '../components/EditorControls';
+import FileTree from '../components/file-explorer/FileTree';
 import { createEditorWebSocketController } from '../services/editorWebSocketController';
 import { OTClient } from '../services/otClient';
 import { Operation, CursorPosition } from '../types';
@@ -175,9 +176,14 @@ const WorkspacePage = () => {
       />
 
       {/* Main Content */}
-      <div className="flex flex-1 gap-4 overflow-hidden">
+      <div className="flex flex-1 gap-4 overflow-hidden px-4 py-4">
+        {/* File Explorer */}
+        <div className="h-full w-72 flex-shrink-0 flex-col overflow-hidden">
+          <FileTree />
+        </div>
+
         {/* Editor Section */}
-        <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded">
+        <div className="flex h-full flex-1 flex-col rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
           <MonacoEditorWrapper
             language={language}
             theme={theme}
@@ -186,13 +192,12 @@ const WorkspacePage = () => {
           />
         </div>
 
-        {/* Sidebar */}
-        <div className="w-64 flex flex-col gap-3 p-3 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded overflow-y-auto">
-          {/* Connection Status */}
-          <ConnectionStatus />
-
-          {/* Participants */}
-          <ParticipantsList />
+        {/* Collaboration Sidebar */}
+        <div className="h-full w-64 flex-shrink-0 flex-col gap-3 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex max-h-full flex-col gap-3 overflow-auto">
+            <ConnectionStatus />
+            <ParticipantsList />
+          </div>
         </div>
       </div>
     </div>
