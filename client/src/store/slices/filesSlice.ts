@@ -4,7 +4,7 @@ import { ApiResponse } from '../../types';
 
 // Async thunks
 export const fetchFileSystem = createAsyncThunk('files/fetchFileSystem', async () => {
-  const response = await fetch('/api/v1/filesystem');
+  const response = await fetch('/api/v1/files/filesystem');
   const data: ApiResponse<FileNode> = await response.json();
 
   if (!data.success || !data.data) {
@@ -133,6 +133,36 @@ export const downloadFile = createAsyncThunk('files/downloadFile', async (path: 
 
   return path;
 });
+
+export const uploadFile = createAsyncThunk(
+  'files/uploadFile',
+  async ({ file, uploadPath }: { file: File; uploadPath: string }, { rejectWithValue }) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('uploadPath', uploadPath);
+
+    try {
+      const response = await fetch('/api/v1/files/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Upload failed');
+      }
+
+      const data: ApiResponse<FileNode> = await response.json();
+      if (!data.success || !data.data) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      return { fileName: file.name, uploadedNode: data.data };
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Upload failed');
+    }
+  }
+);
 
 const initialState: FileSystemState = {
   root: null,
@@ -266,6 +296,17 @@ const filesSlice = createSlice({
       // Download File
       .addCase(downloadFile.rejected, (state, action) => {
         state.error = action.error.message || 'Failed to download file';
+      })
+      // Upload File
+      .addCase(uploadFile.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(uploadFile.fulfilled, (state) => {
+        state.isLoading = false;
+      })
+      .addCase(uploadFile.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) || 'Upload failed';
       });
   },
 });

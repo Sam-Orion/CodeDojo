@@ -16,7 +16,7 @@ import MonacoEditorWrapper from '../components/MonacoEditorWrapper';
 import ParticipantsList from '../components/ParticipantsList';
 import ConnectionStatus from '../components/ConnectionStatus';
 import EditorControls from '../components/EditorControls';
-import FileTree from '../components/file-explorer/FileTree';
+import FileExplorer from '../components/file-explorer/FileExplorer';
 import { createEditorWebSocketController } from '../services/editorWebSocketController';
 import { OTClient } from '../services/otClient';
 import { Operation, CursorPosition } from '../types';
@@ -177,9 +177,9 @@ const WorkspacePage = () => {
 
       {/* Main Content */}
       <div className="flex flex-1 gap-4 overflow-hidden px-4 py-4">
-        {/* File Explorer */}
-        <div className="h-full w-72 flex-shrink-0 flex-col overflow-hidden">
-          <FileTree />
+        {/* File Explorer with Preview and Upload */}
+        <div className="h-full flex-1 flex-col overflow-hidden">
+          <FileExplorer showPreview={true} showUpload={true} layout="horizontal" />
         </div>
 
         {/* Editor Section */}

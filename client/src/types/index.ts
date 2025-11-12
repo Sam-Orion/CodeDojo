@@ -108,6 +108,16 @@ export interface FileSystemState {
   openFiles: FileNode[];
   isLoading: boolean;
   error: string | null;
+  uploads?: UploadState[];
+}
+
+export interface UploadState {
+  id: string;
+  fileName: string;
+  progress: number;
+  status: 'pending' | 'uploading' | 'completed' | 'error';
+  error?: string;
+  retryCount?: number;
 }
 
 // Terminal types
