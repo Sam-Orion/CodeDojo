@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { TerminalSession, TerminalState } from '../../types';
 import { ApiResponse } from '../../types';
+import sessionPersistence from '../../utils/sessionPersistence';
 
 // Async thunks
 export const fetchTerminalCapabilities = createAsyncThunk(
@@ -85,13 +86,43 @@ export const sendTerminalInput = createAsyncThunk(
   }
 );
 
-const initialState: TerminalState = {
-  sessions: [],
-  activeSession: null,
-  isLoading: false,
-  error: null,
-  supportedLanguages: [],
+// Load persisted sessions on initialization
+const loadPersistedSessions = (): TerminalState => {
+  try {
+    const persisted = sessionPersistence.restoreSessions();
+    const sessions: TerminalSession[] = persisted.sessions.map((session) => ({
+      ...session,
+      output: [], // Clear output when restoring sessions
+      currentCommand: undefined,
+      isExecuting: false,
+    }));
+
+    const activeSession = persisted.activeSessionId
+      ? sessions.find((s) => s.id === persisted.activeSessionId) || null
+      : sessions.length > 0
+        ? sessions[0]
+        : null;
+
+    return {
+      sessions,
+      activeSession,
+      isLoading: false,
+      error: null,
+      supportedLanguages: [],
+    };
+  } catch (error) {
+    console.error('Failed to load persisted sessions:', error);
+    return {
+      sessions: [],
+      activeSession: null,
+      isLoading: false,
+      error: null,
+      supportedLanguages: [],
+    };
+  }
 };
+
+const initialState: TerminalState = loadPersistedSessions();
 
 const terminalSlice = createSlice({
   name: 'terminal',
@@ -99,6 +130,8 @@ const terminalSlice = createSlice({
   reducers: {
     setActiveSession: (state, action: PayloadAction<TerminalSession | null>) => {
       state.activeSession = action.payload;
+      // Save to persistence
+      sessionPersistence.saveSessions(state.sessions, state.activeSession?.id || null);
     },
     appendOutput: (state, action: PayloadAction<{ sessionId: string; output: string }>) => {
       const session = state.sessions.find((s) => s.id === action.payload.sessionId);
@@ -110,6 +143,8 @@ const terminalSlice = createSlice({
         state.activeSession.output.push(action.payload.output);
         state.activeSession.lastActivity = new Date().toISOString();
       }
+      // Save to persistence
+      sessionPersistence.saveSessions(state.sessions, state.activeSession?.id || null);
     },
     updateSessionStatus: (
       state,
@@ -124,6 +159,21 @@ const terminalSlice = createSlice({
         state.activeSession.status = action.payload.status;
         state.activeSession.lastActivity = new Date().toISOString();
       }
+      // Save to persistence
+      sessionPersistence.saveSessions(state.sessions, state.activeSession?.id || null);
+    },
+    updateSessionName: (state, action: PayloadAction<{ sessionId: string; name: string }>) => {
+      const session = state.sessions.find((s) => s.id === action.payload.sessionId);
+      if (session) {
+        session.name = action.payload.name;
+        session.lastActivity = new Date().toISOString();
+      }
+      if (state.activeSession?.id === action.payload.sessionId) {
+        state.activeSession.name = action.payload.name;
+        state.activeSession.lastActivity = new Date().toISOString();
+      }
+      // Save to persistence
+      sessionPersistence.saveSessions(state.sessions, state.activeSession?.id || null);
     },
     clearError: (state) => {
       state.error = null;
@@ -155,6 +205,8 @@ const terminalSlice = createSlice({
         state.sessions.push(action.payload);
         state.activeSession = action.payload;
         state.error = null;
+        // Save to persistence
+        sessionPersistence.saveSessions(state.sessions, state.activeSession?.id || null);
       })
       .addCase(createTerminalSession.rejected, (state, action) => {
         state.isLoading = false;
@@ -169,6 +221,8 @@ const terminalSlice = createSlice({
         state.isLoading = false;
         state.sessions = action.payload;
         state.error = null;
+        // Save to persistence
+        sessionPersistence.saveSessions(state.sessions, state.activeSession?.id || null);
       })
       .addCase(fetchTerminalSessions.rejected, (state, action) => {
         state.isLoading = false;
@@ -181,6 +235,8 @@ const terminalSlice = createSlice({
         if (state.activeSession?.id === sessionId) {
           state.activeSession = state.sessions.length > 0 ? state.sessions[0] : null;
         }
+        // Save to persistence
+        sessionPersistence.saveSessions(state.sessions, state.activeSession?.id || null);
       })
       .addCase(terminateTerminalSession.rejected, (state, action) => {
         state.error = action.error.message || 'Failed to terminate terminal session';
@@ -192,7 +248,12 @@ const terminalSlice = createSlice({
   },
 });
 
-export const { setActiveSession, appendOutput, updateSessionStatus, clearError } =
-  terminalSlice.actions;
+export const {
+  setActiveSession,
+  appendOutput,
+  updateSessionStatus,
+  updateSessionName,
+  clearError,
+} = terminalSlice.actions;
 
 export default terminalSlice.reducer;

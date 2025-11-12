@@ -126,9 +126,8 @@ const TerminalInput: React.FC<TerminalInputProps> = ({
           e.preventDefault();
           const suggestion = suggestions[selectedSuggestionIndex];
           setInput(suggestion.text);
-          setShowSuggestions(false);
         } else if (e.key === 'Escape') {
-          setShowSuggestions(false);
+          // Clear suggestions when Escape is pressed
         }
         return;
       }
@@ -151,7 +150,6 @@ const TerminalInput: React.FC<TerminalInputProps> = ({
 
   const handleSuggestionClick = useCallback((suggestion: Suggestion) => {
     setInput(suggestion.text);
-    setShowSuggestions(false);
     inputRef.current?.focus();
   }, []);
 
