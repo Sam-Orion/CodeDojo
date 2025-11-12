@@ -7,6 +7,7 @@ import SettingsPage from '../pages/SettingsPage';
 import WorkspacePage from '../pages/WorkspacePage';
 import StorageProvidersPage from '../pages/StorageProvidersPage';
 import OAuthCallback from '../components/OAuthCallback';
+import TerminalPage from '../pages/TerminalPage';
 
 const Router = () => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
@@ -23,6 +24,7 @@ const Router = () => {
           <Route path="/workspace/:roomId" element={<WorkspacePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/storage-providers" element={<StorageProvidersPage />} />
+          <Route path="/terminal" element={<TerminalPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       ) : (
