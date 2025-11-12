@@ -5,6 +5,7 @@ const terminalRoutes = require('./terminal.routes');
 const aiAssistantRoutes = require('./ai-assistant.routes');
 const aiCredentialsRoutes = require('./ai-credentials.routes');
 const storageRoutes = require('./storage.routes');
+const filesRoutes = require('./files.routes');
 
 const router = express.Router();
 
@@ -14,5 +15,6 @@ router.use('/terminal', terminalRoutes);
 router.use('/ai', aiAssistantRoutes);
 router.use('/ai/credentials', aiCredentialsRoutes);
 router.use('/storage', storageRoutes);
+router.use('/files', filesRoutes);
 
 module.exports = router;

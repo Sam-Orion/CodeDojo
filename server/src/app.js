@@ -8,6 +8,7 @@ const correlationIdMiddleware = require('./middlewares/correlationId');
 const requestLogger = require('./middlewares/requestLogger');
 const metricsMiddleware = require('./middlewares/metrics');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
+const fileUploadMiddleware = require('./middlewares/fileUpload');
 const routes = require('./routes');
 
 const app = express();
@@ -25,6 +26,7 @@ app.use(compression());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(fileUploadMiddleware);
 
 app.use(correlationIdMiddleware);
 app.use(requestLogger);
