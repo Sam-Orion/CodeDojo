@@ -123,6 +123,7 @@ export interface UploadState {
 // Terminal types
 export interface TerminalSession {
   id: string;
+  name?: string;
   language: string;
   mode: 'local' | 'cloud' | 'auto';
   status: 'running' | 'stopped' | 'error';
