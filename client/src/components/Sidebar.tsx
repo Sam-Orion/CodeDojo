@@ -56,6 +56,13 @@ const Sidebar = () => {
             isOpen={isOpen}
           />
           <SidebarLink
+            to="/terminal"
+            icon=">_"
+            label="Terminal"
+            isActive={isActive('/terminal')}
+            isOpen={isOpen}
+          />
+          <SidebarLink
             to="/settings"
             icon="⚙️"
             label="Settings"
