@@ -8,7 +8,10 @@ import { useAppDispatch } from '../../store';
 import { terminateTerminalSession } from '../../store/slices/terminalSlice';
 import { addToast } from '../../store/slices/toastSlice';
 import TerminalToolbar from './TerminalToolbar';
+import TerminalInput from './TerminalInput';
 import Loader from '../ui/Loader';
+import WebSocketManager from '../../utils/websocketManager';
+import { useCommandExecution } from '../../hooks/useCommandExecution';
 import './terminal.css';
 
 interface TerminalComponentProps {
@@ -17,6 +20,7 @@ interface TerminalComponentProps {
   onResize?: (cols: number, rows: number) => void;
   isConnecting?: boolean;
   connectionError?: string | null;
+  wsManager?: WebSocketManager;
 }
 
 const TerminalComponent: React.FC<TerminalComponentProps> = ({
@@ -25,6 +29,7 @@ const TerminalComponent: React.FC<TerminalComponentProps> = ({
   onResize,
   isConnecting = false,
   connectionError = null,
+  wsManager = new WebSocketManager(),
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -32,6 +37,8 @@ const TerminalComponent: React.FC<TerminalComponentProps> = ({
   const outputIndexRef = useRef(0);
   const [isMaximized, setIsMaximized] = useState(false);
   const dispatch = useAppDispatch();
+
+  const { executionState, executeCommand, abortExecution } = useCommandExecution(wsManager, 30000);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -241,6 +248,17 @@ const TerminalComponent: React.FC<TerminalComponentProps> = ({
     }, 100);
   }, []);
 
+  const handleCommandSubmit = useCallback(
+    (command: string) => {
+      executeCommand(session.id, command);
+    },
+    [session.id, executeCommand]
+  );
+
+  const handleAbort = useCallback(() => {
+    abortExecution(session.id);
+  }, [session.id, abortExecution]);
+
   const containerClass = `terminal-container terminal-with-line-numbers ${
     isMaximized ? 'terminal-maximized' : ''
   }`;
@@ -316,6 +334,13 @@ const TerminalComponent: React.FC<TerminalComponentProps> = ({
       <div className="terminal-wrapper">
         <div className="terminal-xterm" ref={terminalRef} />
       </div>
+      <TerminalInput
+        onSubmit={handleCommandSubmit}
+        isExecuting={executionState.isExecuting}
+        isTimeout={executionState.isTimeout}
+        onAbort={handleAbort}
+        language={session.language}
+      />
     </div>
   );
 };

@@ -177,6 +177,7 @@ const TerminalManager: React.FC<TerminalManagerProps> = ({ sessionId, wsManager 
       onResize={handleResize}
       isConnecting={isConnecting}
       connectionError={connectionError}
+      wsManager={internalManager}
     />
   );
 };
