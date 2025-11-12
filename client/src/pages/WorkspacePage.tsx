@@ -17,6 +17,7 @@ import ParticipantsList from '../components/ParticipantsList';
 import ConnectionStatus from '../components/ConnectionStatus';
 import EditorControls from '../components/EditorControls';
 import FileExplorer from '../components/file-explorer/FileExplorer';
+import ChatInterface from '../components/chat/ChatInterface';
 import { createEditorWebSocketController } from '../services/editorWebSocketController';
 import { OTClient } from '../services/otClient';
 import { Operation, CursorPosition } from '../types';
@@ -198,6 +199,13 @@ const WorkspacePage = () => {
             <ConnectionStatus />
             <ParticipantsList />
           </div>
+        </div>
+      </div>
+
+      {/* AI Chat Interface */}
+      <div className="mt-4 px-4 pb-6">
+        <div className="h-[28rem]">
+          <ChatInterface />
         </div>
       </div>
     </div>

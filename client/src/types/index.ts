@@ -151,11 +151,24 @@ export interface AIConversation {
   updatedAt: string;
 }
 
+export type AIMessageRole = 'user' | 'assistant' | 'system';
+
+export type AIMessageStatus = 'success' | 'error' | 'info' | 'pending';
+
+export type AIMessageFeedback = 'up' | 'down' | null;
+
 export interface AIMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: AIMessageRole;
   content: string;
   timestamp: number;
+  model?: string;
+  tokenCount?: number;
+  status?: AIMessageStatus;
+  isStreaming?: boolean;
+  feedback?: AIMessageFeedback;
+  errorDetails?: string;
+  suggestions?: string[];
 }
 
 export interface AIState {

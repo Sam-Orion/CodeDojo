@@ -1,5 +1,11 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { AIConversation, AIMessage, AIState } from '../../types';
+import {
+  AIConversation,
+  AIMessage,
+  AIMessageFeedback,
+  AIMessageStatus,
+  AIState,
+} from '../../types';
 import { ApiResponse } from '../../types';
 
 // Async thunks
@@ -82,6 +88,13 @@ export const explainCode = createAsyncThunk(
   }
 );
 
+const normalizeMessage = (message: AIMessage): AIMessage => ({
+  ...message,
+  timestamp: message.timestamp ?? Date.now(),
+  status: message.status ?? (message.role === 'system' ? 'info' : 'success'),
+  feedback: message.feedback ?? null,
+});
+
 const initialState: AIState = {
   conversations: [],
   activeConversation: null,
@@ -97,25 +110,110 @@ const aiSlice = createSlice({
       state.activeConversation = action.payload;
     },
     addUserMessage: (state, action: PayloadAction<{ conversationId: string; content: string }>) => {
-      const conversation = state.conversations.find((c) => c.id === action.payload.conversationId);
+      const { conversationId, content } = action.payload;
+      const timestamp = Date.now();
+      const tempId = `temp-${timestamp}`;
+
+      const baseMessage: AIMessage = {
+        id: tempId,
+        role: 'user',
+        content,
+        timestamp,
+        status: 'success',
+        feedback: null,
+      };
+
+      const conversation = state.conversations.find((c) => c.id === conversationId);
       if (conversation) {
-        const newMessage: AIMessage = {
-          id: `temp-${Date.now()}`,
-          role: 'user',
-          content: action.payload.content,
-          timestamp: Date.now(),
-        };
-        conversation.messages.push(newMessage);
+        conversation.messages.push({ ...baseMessage });
         conversation.updatedAt = new Date().toISOString();
       }
-      if (state.activeConversation?.id === action.payload.conversationId) {
-        const newMessage: AIMessage = {
-          id: `temp-${Date.now()}`,
-          role: 'user',
-          content: action.payload.content,
-          timestamp: Date.now(),
-        };
-        state.activeConversation.messages.push(newMessage);
+
+      if (
+        state.activeConversation?.id === conversationId &&
+        state.activeConversation !== conversation
+      ) {
+        state.activeConversation.messages.push({ ...baseMessage });
+        state.activeConversation.updatedAt = new Date().toISOString();
+      }
+    },
+    removeMessage: (
+      state,
+      action: PayloadAction<{ conversationId: string; messageId: string }>
+    ) => {
+      const { conversationId, messageId } = action.payload;
+      const conversation = state.conversations.find((c) => c.id === conversationId);
+      if (conversation) {
+        conversation.messages = conversation.messages.filter((m) => m.id !== messageId);
+        conversation.updatedAt = new Date().toISOString();
+      }
+      if (
+        state.activeConversation?.id === conversationId &&
+        state.activeConversation !== conversation
+      ) {
+        state.activeConversation.messages = state.activeConversation.messages.filter(
+          (m) => m.id !== messageId
+        );
+        state.activeConversation.updatedAt = new Date().toISOString();
+      }
+    },
+    setMessageFeedback: (
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        messageId: string;
+        feedback: AIMessageFeedback;
+      }>
+    ) => {
+      const { conversationId, messageId, feedback } = action.payload;
+      const updateFeedback = (message?: AIMessage) => {
+        if (message) {
+          message.feedback = feedback;
+        }
+      };
+
+      const conversation = state.conversations.find((c) => c.id === conversationId);
+      if (conversation) {
+        updateFeedback(conversation.messages.find((m) => m.id === messageId));
+      }
+      if (
+        state.activeConversation?.id === conversationId &&
+        state.activeConversation !== conversation
+      ) {
+        updateFeedback(state.activeConversation.messages.find((m) => m.id === messageId));
+      }
+    },
+    addSystemMessage: (
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        content: string;
+        status?: AIMessageStatus;
+        suggestions?: string[];
+      }>
+    ) => {
+      const { conversationId, content, status = 'info', suggestions } = action.payload;
+      const baseSystemMessage: AIMessage = {
+        id: `system-${Date.now()}`,
+        role: 'system',
+        content,
+        timestamp: Date.now(),
+        status,
+        suggestions,
+        feedback: null,
+      };
+      const systemMessage = normalizeMessage(baseSystemMessage);
+
+      const conversation = state.conversations.find((c) => c.id === conversationId);
+      if (conversation) {
+        conversation.messages.push({ ...systemMessage });
+        conversation.updatedAt = new Date().toISOString();
+      }
+      if (
+        state.activeConversation?.id === conversationId &&
+        state.activeConversation !== conversation
+      ) {
+        state.activeConversation.messages.push({ ...systemMessage });
         state.activeConversation.updatedAt = new Date().toISOString();
       }
     },
@@ -132,8 +230,14 @@ const aiSlice = createSlice({
       })
       .addCase(createConversation.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.conversations.push(action.payload);
-        state.activeConversation = action.payload;
+        const normalizedConversation: AIConversation = {
+          ...action.payload,
+          messages: action.payload.messages?.map((message) => normalizeMessage(message)) ?? [],
+        };
+
+        state.conversations = state.conversations.filter((c) => c.id !== normalizedConversation.id);
+        state.conversations.push(normalizedConversation);
+        state.activeConversation = normalizedConversation;
         state.error = null;
       })
       .addCase(createConversation.rejected, (state, action) => {
@@ -147,7 +251,24 @@ const aiSlice = createSlice({
       })
       .addCase(fetchConversations.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.conversations = action.payload;
+        const normalizedConversations = action.payload.map((conversation) => ({
+          ...conversation,
+          messages: conversation.messages?.map((message) => normalizeMessage(message)) ?? [],
+        }));
+
+        state.conversations = normalizedConversations;
+
+        if (normalizedConversations.length === 0) {
+          state.activeConversation = null;
+        } else if (state.activeConversation) {
+          const updatedActive = normalizedConversations.find(
+            (conversation) => conversation.id === state.activeConversation?.id
+          );
+          state.activeConversation = updatedActive ?? normalizedConversations[0];
+        } else {
+          state.activeConversation = normalizedConversations[0];
+        }
+
         state.error = null;
       })
       .addCase(fetchConversations.rejected, (state, action) => {
@@ -162,25 +283,67 @@ const aiSlice = createSlice({
       .addCase(sendMessage.fulfilled, (state, action) => {
         state.isLoading = false;
         const { conversationId, message } = action.payload;
-        const conversation = state.conversations.find((c) => c.id === conversationId);
-        if (conversation) {
-          // Remove temporary message if it exists
-          conversation.messages = conversation.messages.filter((m) => !m.id.startsWith('temp-'));
-          // Add the actual message
-          conversation.messages.push(message);
-          conversation.updatedAt = new Date().toISOString();
-        }
-        if (state.activeConversation?.id === conversationId) {
-          state.activeConversation.messages = state.activeConversation.messages.filter(
-            (m) => !m.id.startsWith('temp-')
+        const normalizedMessage = normalizeMessage(message);
+
+        const updateConversation = (target?: AIConversation) => {
+          if (!target) return;
+          target.messages = target.messages.filter(
+            (m) => !m.id.startsWith('temp-') && m.id !== normalizedMessage.id
           );
-          state.activeConversation.messages.push(message);
-          state.activeConversation.updatedAt = new Date().toISOString();
+          target.messages.push({ ...normalizedMessage });
+          target.updatedAt = new Date().toISOString();
+        };
+
+        const conversation = state.conversations.find((c) => c.id === conversationId);
+        updateConversation(conversation);
+
+        if (
+          state.activeConversation?.id === conversationId &&
+          state.activeConversation !== conversation
+        ) {
+          updateConversation(state.activeConversation);
         }
       })
       .addCase(sendMessage.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.error.message || 'Failed to send message';
+        const errorMessage = action.error.message || 'Failed to send message';
+        state.error = errorMessage;
+
+        const conversationId = action.meta.arg?.conversationId;
+        if (!conversationId) {
+          return;
+        }
+
+        const systemMessage = normalizeMessage({
+          id: `error-${Date.now()}`,
+          role: 'system',
+          content: errorMessage,
+          timestamp: Date.now(),
+          status: 'error',
+          suggestions: [
+            'Check your network connection.',
+            'Try regenerating the response.',
+            'Review the prompt or context for potential issues.',
+          ],
+          feedback: null,
+        });
+
+        const updateConversation = (target?: AIConversation) => {
+          if (!target) return;
+          target.messages = target.messages.filter((m) => !m.id.startsWith('temp-'));
+          target.messages.push({ ...systemMessage });
+          target.updatedAt = new Date().toISOString();
+        };
+
+        const conversation = state.conversations.find((c) => c.id === conversationId);
+        updateConversation(conversation);
+
+        if (
+          state.activeConversation?.id === conversationId &&
+          state.activeConversation !== conversation
+        ) {
+          updateConversation(state.activeConversation);
+        }
       })
       // Generate Code
       .addCase(generateCode.pending, (state) => {
@@ -211,6 +374,13 @@ const aiSlice = createSlice({
   },
 });
 
-export const { setActiveConversation, addUserMessage, clearError } = aiSlice.actions;
+export const {
+  setActiveConversation,
+  addUserMessage,
+  removeMessage,
+  setMessageFeedback,
+  addSystemMessage,
+  clearError,
+} = aiSlice.actions;
 
 export default aiSlice.reducer;
