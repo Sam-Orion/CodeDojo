@@ -112,13 +112,15 @@ export const RootStateSchema = z.object({
 export type RootState = z.infer<typeof RootStateSchema>;
 
 // Middleware to show toast notifications for AI errors
-const aiErrorToastMiddleware: Middleware = (store) => (next) => (action) => {
+const aiErrorToastMiddleware: Middleware = (store) => (next) => (action: unknown) => {
   const result = next(action);
 
+  const actionObj = action as Record<string, any>;
+
   // Check if it's a rejected AI action
-  if (action.type?.startsWith('ai/') && action.type?.endsWith('/rejected')) {
+  if (actionObj.type?.startsWith('ai/') && actionObj.type?.endsWith('/rejected')) {
     const errorMessage =
-      action.payload || action.error?.message || 'An error occurred with the AI service';
+      actionObj.payload || actionObj.error?.message || 'An error occurred with the AI service';
 
     // Show error toast
     store.dispatch(
@@ -131,7 +133,7 @@ const aiErrorToastMiddleware: Middleware = (store) => (next) => (action) => {
   }
 
   // Check if message was sent successfully
-  if (action.type === 'ai/sendMessage/fulfilled') {
+  if (actionObj.type === 'ai/sendMessage/fulfilled') {
     store.dispatch(
       addToast({
         message: 'Message sent successfully',

@@ -10,6 +10,7 @@ import {
   sendMessage,
   setMessageFeedback,
 } from '../../store/slices/aiSlice';
+import { useStreamingMessages } from '../../hooks';
 import type { AIMessage } from '../../types';
 import Button from '../ui/Button';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -134,6 +135,12 @@ const SpinnerIcon = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+const StopIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+  </svg>
+);
+
 interface MessageActionButtonProps {
   label: string;
   onClick: () => void;
@@ -168,10 +175,36 @@ const MessageActionButton: React.FC<MessageActionButtonProps> = ({
   );
 };
 
-const LoadingIndicator = () => (
+interface LoadingIndicatorProps {
+  isStreaming?: boolean;
+  tokenCount?: number;
+  onStop?: () => void;
+}
+
+const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
+  isStreaming = false,
+  tokenCount = 0,
+  onStop,
+}) => (
   <div className="flex items-center gap-3 rounded-full bg-gray-100 px-4 py-2 text-sm text-gray-600 shadow-sm dark:bg-gray-800/60 dark:text-gray-300">
     <span className="flex h-2 w-2 animate-ping rounded-full bg-primary-500" />
-    <span>Waiting for AI response...</span>
+    {isStreaming ? (
+      <>
+        <span>Streaming response{tokenCount > 0 ? ` (${tokenCount} tokens)` : '...'}</span>
+        {onStop && (
+          <button
+            onClick={onStop}
+            className="ml-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+            type="button"
+          >
+            <StopIcon className="h-3 w-3" />
+            Stop
+          </button>
+        )}
+      </>
+    ) : (
+      <span>Waiting for AI response...</span>
+    )}
   </div>
 );
 
@@ -190,6 +223,8 @@ const ChatInterface: React.FC = () => {
     (state) => state.ai
   );
   const messages = activeConversation?.messages ?? [];
+
+  const { startStream, stopStream, isStreaming, tokenCount } = useStreamingMessages();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasFetchedRef = useRef(false);
@@ -231,7 +266,7 @@ const ChatInterface: React.FC = () => {
         behavior: 'smooth',
       });
     }
-  }, [messages.length, isLoading, isSubmitting]);
+  }, [messages.length, isLoading, isSubmitting, isStreaming, tokenCount]);
 
   useEffect(() => {
     if (copiedMessageId) {
@@ -304,7 +339,7 @@ const ChatInterface: React.FC = () => {
     (message: AIMessage) => {
       if (!activeConversation) return;
       const { id: conversationId, messages: conversationMessages } = activeConversation;
-      const currentIndex = conversationMessages.findIndex((m) => m.id === message.id);
+      const currentIndex = conversationMessages.findIndex((m: AIMessage) => m.id === message.id);
       if (currentIndex === -1) {
         return;
       }
@@ -361,7 +396,7 @@ const ChatInterface: React.FC = () => {
 
   const handleSendMessage = useCallback(
     (content: string) => {
-      if (!activeConversation || isSubmitting) {
+      if (!activeConversation || isSubmitting || isStreaming) {
         return;
       }
 
@@ -373,15 +408,13 @@ const ChatInterface: React.FC = () => {
         })
       );
 
-      // Send message to API
-      dispatch(
-        sendMessage({
-          conversationId: activeConversation.id,
-          content,
-        })
-      );
+      // Use streaming for real-time token updates
+      startStream({
+        conversationId: activeConversation.id,
+        content,
+      });
     },
-    [activeConversation, isSubmitting, dispatch]
+    [activeConversation, isSubmitting, isStreaming, dispatch, startStream]
   );
 
   return (
@@ -434,12 +467,12 @@ const ChatInterface: React.FC = () => {
         ref={scrollContainerRef}
         className="flex-1 space-y-6 overflow-y-auto px-4 py-6"
         aria-live="polite"
-        aria-busy={isLoading}
+        aria-busy={isLoading || isStreaming}
       >
         {messages.length === 0 && !isLoading ? (
           <EmptyState />
         ) : (
-          messages.map((message) => {
+          messages.map((message: AIMessage) => {
             const isUser = message.role === 'user';
             const isAssistant = message.role === 'assistant';
             const isSystem = message.role === 'system';
@@ -521,6 +554,13 @@ const ChatInterface: React.FC = () => {
                       </p>
                     )}
 
+                    {message.isStreaming && (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                        <SpinnerIcon className="h-3 w-3" />
+                        <span>Streaming...</span>
+                      </div>
+                    )}
+
                     {isSystem && message.status === 'error' && (
                       <div className="mt-3 flex items-start gap-2 text-sm">
                         <WarningIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500 dark:text-red-300" />
@@ -540,7 +580,7 @@ const ChatInterface: React.FC = () => {
                     <div className="w-full rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-left text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
                       <p className="font-semibold">Actionable suggestions</p>
                       <ul className="mt-2 list-disc space-y-1 pl-5">
-                        {message.suggestions.map((suggestion) => (
+                        {message.suggestions.map((suggestion: string) => (
                           <li key={suggestion}>{suggestion}</li>
                         ))}
                       </ul>
@@ -623,9 +663,13 @@ const ChatInterface: React.FC = () => {
           })
         )}
 
-        {(isLoading || isSubmitting) && (
+        {(isLoading || isSubmitting || isStreaming) && (
           <div className="flex justify-start">
-            <LoadingIndicator />
+            <LoadingIndicator
+              isStreaming={isStreaming}
+              tokenCount={tokenCount}
+              onStop={isStreaming ? stopStream : undefined}
+            />
           </div>
         )}
       </div>
@@ -633,8 +677,8 @@ const ChatInterface: React.FC = () => {
       <footer className="border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
         <ChatInput
           onSubmit={handleSendMessage}
-          isLoading={isSubmitting}
-          disabled={!activeConversation || isSubmitting}
+          isLoading={isSubmitting || isStreaming}
+          disabled={!activeConversation || isSubmitting || isStreaming}
         />
       </footer>
     </div>

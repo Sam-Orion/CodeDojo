@@ -276,6 +276,77 @@ const submitMessage = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Stream a message response to AI with real-time token updates
+ * @route POST /api/v1/ai/messages/stream
+ */
+const streamMessage = asyncHandler(async (req, res) => {
+  const { conversationId, content, provider } = req.body;
+  const userId = req.user?.id;
+
+  // Validate required fields
+  if (!conversationId || !content) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'conversationId and content are required' }));
+    return;
+  }
+
+  // Validate message is not empty
+  if (content.trim().length === 0) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Message content cannot be empty' }));
+    return;
+  }
+
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control',
+  });
+
+  try {
+    logger.info('Message stream started', {
+      userId,
+      conversationId,
+      provider,
+      contentLength: content.length,
+    });
+
+    // Get the streaming generator from AI service
+    const messageStream = aiAssistantService.processMessageStream({
+      userId,
+      conversationId,
+      content,
+      provider,
+    });
+
+    // Send events to client as they arrive
+    for await (const chunk of messageStream) {
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    }
+
+    // Send completion event
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    res.end();
+  } catch (error) {
+    logger.error('Stream message error', {
+      error: error.message,
+      userId,
+      conversationId,
+    });
+    res.write(
+      `data: ${JSON.stringify({
+        type: 'error',
+        error: error.message || 'Streaming failed',
+      })}\n\n`
+    );
+    res.end();
+  }
+});
+
 module.exports = {
   streamCompletion,
   explainCode,
@@ -285,4 +356,5 @@ module.exports = {
   getCacheStats,
   submitFeedback,
   submitMessage,
+  streamMessage,
 };

@@ -471,6 +471,79 @@ ${content}`;
   }
 
   /**
+   * Process a chat message with streaming response
+   * @param {Object} params - Message parameters
+   * @returns {AsyncGenerator} - Streaming response tokens
+   */
+  async *processMessageStream(params) {
+    const { userId, conversationId, content, provider: preferredProvider = null } = params;
+    const requestId = uuidv4();
+
+    try {
+      // Get user provider or default
+      const { provider, providerName } = await this.getUserProvider(userId, preferredProvider);
+
+      // Prepare prompt for AI
+      const prompt = `You are a helpful AI assistant. Please respond to the following message:
+
+${content}`;
+
+      logger.info('Starting message stream', {
+        userId,
+        conversationId,
+        provider: providerName,
+        requestId,
+      });
+
+      let totalTokens = 0;
+
+      // Stream completion from provider
+      const stream = provider.streamCompletion({
+        prompt,
+        maxTokens: 2000,
+        temperature: 0.7,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content' && chunk.content) {
+          // Stream each token/chunk as it arrives
+          yield {
+            type: 'token',
+            token: chunk.content,
+            tokenCount: totalTokens,
+          };
+        } else if (chunk.type === 'done' && chunk.usage) {
+          totalTokens = chunk.usage.totalTokens || 0;
+          // Send final metadata
+          yield {
+            type: 'metadata',
+            tokenCount: totalTokens,
+          };
+        }
+      }
+
+      logger.info('Message stream completed', {
+        userId,
+        conversationId,
+        provider: providerName,
+        totalTokens,
+        requestId,
+      });
+    } catch (error) {
+      logger.error('Process message stream error', {
+        error: error.message,
+        userId,
+        conversationId,
+        requestId,
+      });
+      yield {
+        type: 'error',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * Get available providers and capabilities
    * @returns {Object} - Provider information
    */
