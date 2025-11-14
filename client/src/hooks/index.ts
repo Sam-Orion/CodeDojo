@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAppSelector } from '../store';
 
 export * from './useStreamingMessages';
+export * from './useOfflineMessageQueue';
 
 export const useAuth = () => {
   const auth = useAppSelector((state) => state.auth);
