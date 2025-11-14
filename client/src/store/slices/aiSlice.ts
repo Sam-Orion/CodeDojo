@@ -300,6 +300,123 @@ const aiSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    updateStreamingMessage: (
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        messageId: string;
+        content: string;
+        tokenCount: number;
+      }>
+    ) => {
+      const { conversationId, messageId, content, tokenCount } = action.payload;
+
+      const updateMessage = (target?: AIConversation) => {
+        if (!target) return;
+        let message = target.messages.find((m) => m.id === messageId);
+
+        if (!message) {
+          // Create new streaming message if it doesn't exist
+          message = {
+            id: messageId,
+            role: 'assistant',
+            content,
+            timestamp: Date.now(),
+            status: 'pending',
+            isStreaming: true,
+            tokenCount,
+            feedback: null,
+          };
+          target.messages.push(message);
+        } else {
+          // Update existing message
+          message.content = content;
+          message.tokenCount = tokenCount;
+          message.isStreaming = true;
+        }
+        target.updatedAt = new Date().toISOString();
+      };
+
+      const conversation = state.conversations.find((c) => c.id === conversationId);
+      updateMessage(conversation);
+
+      if (
+        state.activeConversation?.id === conversationId &&
+        state.activeConversation !== conversation
+      ) {
+        updateMessage(state.activeConversation);
+      }
+    },
+    completeStreamingMessage: (
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        messageId: string;
+        content: string;
+        status: AIMessageStatus;
+        tokenCount: number;
+        errorDetails?: string;
+      }>
+    ) => {
+      const { conversationId, messageId, content, status, tokenCount, errorDetails } =
+        action.payload;
+
+      const updateMessage = (target?: AIConversation) => {
+        if (!target) return;
+        let message = target.messages.find((m) => m.id === messageId);
+
+        if (!message) {
+          message = {
+            id: messageId,
+            role: 'assistant',
+            content,
+            timestamp: Date.now(),
+            status,
+            isStreaming: false,
+            tokenCount,
+            feedback: null,
+            errorDetails,
+          };
+          target.messages.push(message);
+        } else {
+          message.content = content;
+          message.status = status;
+          message.isStreaming = false;
+          message.tokenCount = tokenCount;
+          if (errorDetails) {
+            message.errorDetails = errorDetails;
+          }
+        }
+        target.updatedAt = new Date().toISOString();
+      };
+
+      const conversation = state.conversations.find((c) => c.id === conversationId);
+      updateMessage(conversation);
+
+      if (
+        state.activeConversation?.id === conversationId &&
+        state.activeConversation !== conversation
+      ) {
+        updateMessage(state.activeConversation);
+      }
+    },
+    clearStreamingState: (state, action: PayloadAction<{ conversationId: string }>) => {
+      const { conversationId } = action.payload;
+      const conversation = state.conversations.find((c) => c.id === conversationId);
+
+      if (conversation) {
+        // Remove any pending streaming messages
+        conversation.messages = conversation.messages.filter((m) => !m.isStreaming);
+        conversation.updatedAt = new Date().toISOString();
+      }
+
+      if (state.activeConversation?.id === conversationId) {
+        state.activeConversation.messages = state.activeConversation.messages.filter(
+          (m) => !m.isStreaming
+        );
+        state.activeConversation.updatedAt = new Date().toISOString();
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -480,6 +597,9 @@ export const {
   setMessageFeedback,
   addSystemMessage,
   clearError,
+  updateStreamingMessage,
+  completeStreamingMessage,
+  clearStreamingState,
 } = aiSlice.actions;
 
 export default aiSlice.reducer;

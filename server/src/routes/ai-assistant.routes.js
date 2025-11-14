@@ -57,6 +57,13 @@ router.get('/cache/stats', aiAssistantController.getCacheStats);
 router.post('/feedback', aiAssistantController.submitFeedback);
 
 /**
+ * @route POST /api/v1/ai/messages/stream
+ * @desc Stream a message response with real-time token updates
+ * @access Private
+ */
+router.post('/messages/stream', aiAssistantController.streamMessage);
+
+/**
  * @route POST /api/v1/ai/messages
  * @desc Submit a message and get AI response
  * @access Private
