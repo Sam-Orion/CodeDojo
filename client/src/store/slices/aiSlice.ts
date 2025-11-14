@@ -36,19 +36,98 @@ export const fetchConversations = createAsyncThunk('ai/fetchConversations', asyn
 
 export const sendMessage = createAsyncThunk(
   'ai/sendMessage',
-  async ({ conversationId, content }: { conversationId: string; content: string }) => {
-    const response = await fetch(`/api/v1/ai/conversations/${conversationId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    });
-    const data: ApiResponse<AIMessage> = await response.json();
-
-    if (!data.success || !data.data) {
-      throw new Error(data.error || 'Failed to send message');
+  async (
+    {
+      conversationId,
+      content,
+      provider,
+    }: { conversationId: string; content: string; provider?: string },
+    { rejectWithValue, signal }
+  ) => {
+    // Validate empty messages
+    if (!content || content.trim().length === 0) {
+      return rejectWithValue('Message content cannot be empty');
     }
 
-    return { conversationId, message: data.data };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    // Link abort signals
+    if (signal) {
+      signal.addEventListener('abort', () => controller.abort());
+    }
+
+    try {
+      const response = await fetch(`/api/v1/ai/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId, content, provider }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // Handle non-OK responses
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data: ApiResponse<{ userMessage: AIMessage; assistantMessage: AIMessage }> =
+        await response.json();
+
+      if (!data.success || !data.data) {
+        throw new Error(data.error || 'Failed to send message');
+      }
+
+      return { conversationId, messages: data.data };
+    } catch (error: unknown) {
+      clearTimeout(timeoutId);
+
+      // Handle abort/timeout
+      if (error instanceof Error && error.name === 'AbortError') {
+        return rejectWithValue('Request timeout. Please try again.');
+      }
+
+      // Handle network errors
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        return rejectWithValue('Network error. Please check your connection and try again.');
+      }
+
+      // Handle other errors
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      return rejectWithValue(errorMessage);
+    }
+  }
+);
+
+export const retryLastMessage = createAsyncThunk(
+  'ai/retryLastMessage',
+  async (
+    { conversationId }: { conversationId: string },
+    { getState, dispatch, rejectWithValue }
+  ) => {
+    const state = getState() as { ai: AIState };
+    const conversation = state.ai.conversations.find((c) => c.id === conversationId);
+
+    if (!conversation) {
+      return rejectWithValue('Conversation not found');
+    }
+
+    // Find the last user message
+    const lastUserMessage = [...conversation.messages].reverse().find((msg) => msg.role === 'user');
+
+    if (!lastUserMessage) {
+      return rejectWithValue('No message to retry');
+    }
+
+    // Dispatch sendMessage with the last user message content
+    return dispatch(
+      sendMessage({
+        conversationId,
+        content: lastUserMessage.content,
+      })
+    ).unwrap();
   }
 );
 
@@ -99,6 +178,7 @@ const initialState: AIState = {
   conversations: [],
   activeConversation: null,
   isLoading: false,
+  isSubmitting: false,
   error: null,
 };
 
@@ -277,20 +357,24 @@ const aiSlice = createSlice({
       })
       // Send Message
       .addCase(sendMessage.pending, (state) => {
-        state.isLoading = true;
+        state.isSubmitting = true;
         state.error = null;
       })
       .addCase(sendMessage.fulfilled, (state, action) => {
-        state.isLoading = false;
-        const { conversationId, message } = action.payload;
-        const normalizedMessage = normalizeMessage(message);
+        state.isSubmitting = false;
+        const { conversationId, messages } = action.payload;
+        const { userMessage, assistantMessage } = messages;
+
+        const normalizedUserMessage = normalizeMessage(userMessage);
+        const normalizedAssistantMessage = normalizeMessage(assistantMessage);
 
         const updateConversation = (target?: AIConversation) => {
           if (!target) return;
-          target.messages = target.messages.filter(
-            (m) => !m.id.startsWith('temp-') && m.id !== normalizedMessage.id
-          );
-          target.messages.push({ ...normalizedMessage });
+          // Remove temporary messages
+          target.messages = target.messages.filter((m) => !m.id.startsWith('temp-'));
+          // Add both user and assistant messages
+          target.messages.push({ ...normalizedUserMessage });
+          target.messages.push({ ...normalizedAssistantMessage });
           target.updatedAt = new Date().toISOString();
         };
 
@@ -305,8 +389,9 @@ const aiSlice = createSlice({
         }
       })
       .addCase(sendMessage.rejected, (state, action) => {
-        state.isLoading = false;
-        const errorMessage = action.error.message || 'Failed to send message';
+        state.isSubmitting = false;
+        const errorMessage =
+          (action.payload as string) || action.error.message || 'Failed to send message';
         state.error = errorMessage;
 
         const conversationId = action.meta.arg?.conversationId;
@@ -344,6 +429,20 @@ const aiSlice = createSlice({
         ) {
           updateConversation(state.activeConversation);
         }
+      })
+      // Retry Last Message
+      .addCase(retryLastMessage.pending, (state) => {
+        state.isSubmitting = true;
+        state.error = null;
+      })
+      .addCase(retryLastMessage.fulfilled, (state) => {
+        state.isSubmitting = false;
+        // Messages are already handled by sendMessage.fulfilled
+      })
+      .addCase(retryLastMessage.rejected, (state, action) => {
+        state.isSubmitting = false;
+        state.error =
+          (action.payload as string) || action.error.message || 'Failed to retry message';
       })
       // Generate Code
       .addCase(generateCode.pending, (state) => {

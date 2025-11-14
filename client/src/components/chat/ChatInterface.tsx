@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type SVGProps } from 'react';
+import React, { useCallback, useEffect, useRef, useState, type SVGProps } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
   addSystemMessage,
+  addUserMessage,
   clearError,
   createConversation,
   fetchConversations,
@@ -12,6 +13,7 @@ import {
 import type { AIMessage } from '../../types';
 import Button from '../ui/Button';
 import MarkdownRenderer from './MarkdownRenderer';
+import ChatInput from './ChatInput';
 
 const cn = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(' ');
@@ -184,7 +186,7 @@ const EmptyState = () => (
 
 const ChatInterface: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { activeConversation, conversations, isLoading, error } = useAppSelector(
+  const { activeConversation, conversations, isLoading, isSubmitting, error } = useAppSelector(
     (state) => state.ai
   );
   const messages = activeConversation?.messages ?? [];
@@ -229,7 +231,7 @@ const ChatInterface: React.FC = () => {
         behavior: 'smooth',
       });
     }
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, isSubmitting]);
 
   useEffect(() => {
     if (copiedMessageId) {
@@ -238,17 +240,6 @@ const ChatInterface: React.FC = () => {
     }
     return undefined;
   }, [copiedMessageId]);
-
-  const lastUserMessage = useMemo(() => {
-    if (!activeConversation) return null;
-    for (let i = activeConversation.messages.length - 1; i >= 0; i -= 1) {
-      const message = activeConversation.messages[i];
-      if (message.role === 'user') {
-        return message;
-      }
-    }
-    return null;
-  }, [activeConversation]);
 
   const handleCopy = useCallback(
     async (message: AIMessage) => {
@@ -367,6 +358,31 @@ const ChatInterface: React.FC = () => {
         return message.status === 'error' ? 'System alert' : 'System';
     }
   }, []);
+
+  const handleSendMessage = useCallback(
+    (content: string) => {
+      if (!activeConversation || isSubmitting) {
+        return;
+      }
+
+      // Optimistically add user message to UI
+      dispatch(
+        addUserMessage({
+          conversationId: activeConversation.id,
+          content,
+        })
+      );
+
+      // Send message to API
+      dispatch(
+        sendMessage({
+          conversationId: activeConversation.id,
+          content,
+        })
+      );
+    },
+    [activeConversation, isSubmitting, dispatch]
+  );
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
@@ -607,21 +623,20 @@ const ChatInterface: React.FC = () => {
           })
         )}
 
-        {isLoading && (
+        {(isLoading || isSubmitting) && (
           <div className="flex justify-start">
             <LoadingIndicator />
           </div>
         )}
       </div>
 
-      {lastUserMessage && (
-        <footer className="border-t border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-          <span className="font-semibold text-gray-600 dark:text-gray-200">Last prompt:</span>{' '}
-          <span className="block max-h-16 overflow-hidden text-gray-600 italic dark:text-gray-300">
-            {lastUserMessage.content}
-          </span>
-        </footer>
-      )}
+      <footer className="border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
+        <ChatInput
+          onSubmit={handleSendMessage}
+          isLoading={isSubmitting}
+          disabled={!activeConversation || isSubmitting}
+        />
+      </footer>
     </div>
   );
 };

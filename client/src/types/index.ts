@@ -175,6 +175,7 @@ export interface AIState {
   conversations: AIConversation[];
   activeConversation: AIConversation | null;
   isLoading: boolean;
+  isSubmitting: boolean;
   error: string | null;
 }
 

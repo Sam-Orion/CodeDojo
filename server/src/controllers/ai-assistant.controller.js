@@ -203,6 +203,79 @@ const submitFeedback = asyncHandler(async (req, res) => {
   res.json({ success: true });
 });
 
+/**
+ * Submit a message to AI and get response
+ * @route POST /api/v1/ai/messages
+ */
+const submitMessage = asyncHandler(async (req, res) => {
+  const { conversationId, content, provider } = req.body;
+  const userId = req.user?.id;
+
+  // Validate required fields
+  if (!conversationId || !content) {
+    return res.status(400).json({
+      success: false,
+      error: 'conversationId and content are required',
+    });
+  }
+
+  // Validate message is not empty
+  if (content.trim().length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Message content cannot be empty',
+    });
+  }
+
+  try {
+    logger.info('Message submission received', {
+      userId,
+      conversationId,
+      provider,
+      contentLength: content.length,
+    });
+
+    // Call AI service to process the message
+    const result = await aiAssistantService.processMessage({
+      userId,
+      conversationId,
+      content,
+      provider,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error('Message submission error', {
+      error: error.message,
+      userId,
+      conversationId,
+    });
+
+    // Handle specific error types
+    if (error.message.includes('timeout')) {
+      return res.status(408).json({
+        success: false,
+        error: 'Request timeout. Please try again.',
+      });
+    }
+
+    if (error.message.includes('network') || error.message.includes('ECONNREFUSED')) {
+      return res.status(503).json({
+        success: false,
+        error: 'Service unavailable. Please try again later.',
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to process message',
+    });
+  }
+});
+
 module.exports = {
   streamCompletion,
   explainCode,
@@ -211,4 +284,5 @@ module.exports = {
   getProviders,
   getCacheStats,
   submitFeedback,
+  submitMessage,
 };
