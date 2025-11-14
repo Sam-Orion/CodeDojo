@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { configureStore } from '@reduxjs/toolkit';
+import { configureStore, Middleware } from '@reduxjs/toolkit';
 import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
 
 // Import slices (will be created next)
@@ -9,7 +9,7 @@ import filesSlice from './slices/filesSlice';
 import terminalSlice from './slices/terminalSlice';
 import aiSlice from './slices/aiSlice';
 import storageProviderSlice from './slices/storageProviderSlice';
-import toastSlice from './slices/toastSlice';
+import toastSlice, { addToast } from './slices/toastSlice';
 
 // Zod schema for validating the entire Redux state
 export const RootStateSchema = z.object({
@@ -86,6 +86,7 @@ export const RootStateSchema = z.object({
     conversations: z.array(z.any()),
     activeConversation: z.any().nullable(),
     isLoading: z.boolean(),
+    isSubmitting: z.boolean(),
     error: z.string().nullable(),
   }),
   storageProvider: z.object({
@@ -110,6 +111,39 @@ export const RootStateSchema = z.object({
 
 export type RootState = z.infer<typeof RootStateSchema>;
 
+// Middleware to show toast notifications for AI errors
+const aiErrorToastMiddleware: Middleware = (store) => (next) => (action) => {
+  const result = next(action);
+
+  // Check if it's a rejected AI action
+  if (action.type?.startsWith('ai/') && action.type?.endsWith('/rejected')) {
+    const errorMessage =
+      action.payload || action.error?.message || 'An error occurred with the AI service';
+
+    // Show error toast
+    store.dispatch(
+      addToast({
+        message: errorMessage,
+        type: 'error',
+        duration: 5000,
+      })
+    );
+  }
+
+  // Check if message was sent successfully
+  if (action.type === 'ai/sendMessage/fulfilled') {
+    store.dispatch(
+      addToast({
+        message: 'Message sent successfully',
+        type: 'success',
+        duration: 3000,
+      })
+    );
+  }
+
+  return result;
+};
+
 // Configure the Redux store
 export const store = configureStore({
   reducer: {
@@ -126,7 +160,7 @@ export const store = configureStore({
       serializableCheck: {
         ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE'],
       },
-    }),
+    }).concat(aiErrorToastMiddleware),
   devTools: process.env.NODE_ENV !== 'production',
 });
 

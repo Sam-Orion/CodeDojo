@@ -377,6 +377,100 @@ ${code}
   }
 
   /**
+   * Process a chat message and get AI response
+   * @param {Object} params - Message parameters
+   * @returns {Object} - Message response with user and assistant messages
+   */
+  async processMessage(params) {
+    const { userId, conversationId, content, provider: preferredProvider = null } = params;
+
+    try {
+      // Get user provider or default
+      const { provider, providerName } = await this.getUserProvider(userId, preferredProvider);
+
+      // Generate unique message IDs
+      const userMessageId = uuidv4();
+      const assistantMessageId = uuidv4();
+      const timestamp = Date.now();
+
+      // Create user message
+      const userMessage = {
+        id: userMessageId,
+        role: 'user',
+        content,
+        timestamp,
+        status: 'success',
+        feedback: null,
+      };
+
+      // Prepare prompt for AI
+      const prompt = `You are a helpful AI assistant. Please respond to the following message:
+
+${content}`;
+
+      // Call AI provider (non-streaming version)
+      let assistantContent = '';
+      let tokenCount = 0;
+
+      try {
+        // Use the provider's stream method and collect all chunks
+        const stream = provider.streamCompletion({
+          prompt,
+          maxTokens: 2000,
+          temperature: 0.7,
+        });
+
+        for await (const chunk of stream) {
+          if (chunk.type === 'content') {
+            assistantContent += chunk.content || '';
+          } else if (chunk.type === 'done' && chunk.usage) {
+            tokenCount = chunk.usage.totalTokens || 0;
+          }
+        }
+      } catch (streamError) {
+        logger.error('Stream processing error', { error: streamError.message });
+        throw new Error(`AI provider error: ${streamError.message}`);
+      }
+
+      if (!assistantContent) {
+        throw new Error('No response received from AI provider');
+      }
+
+      // Create assistant message
+      const assistantMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: assistantContent,
+        timestamp: Date.now(),
+        model: providerName,
+        tokenCount,
+        status: 'success',
+        feedback: null,
+      };
+
+      logger.info('Message processed successfully', {
+        userId,
+        conversationId,
+        provider: providerName,
+        tokenCount,
+      });
+
+      // Return both messages
+      return {
+        userMessage,
+        assistantMessage,
+      };
+    } catch (error) {
+      logger.error('Process message error', {
+        error: error.message,
+        userId,
+        conversationId,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get available providers and capabilities
    * @returns {Object} - Provider information
    */
