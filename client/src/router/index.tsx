@@ -8,6 +8,7 @@ import WorkspacePage from '../pages/WorkspacePage';
 import StorageProvidersPage from '../pages/StorageProvidersPage';
 import OAuthCallback from '../components/OAuthCallback';
 import TerminalPage from '../pages/TerminalPage';
+import ChatInputDemoPage from '../pages/ChatInputDemoPage';
 
 const Router = () => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
@@ -25,6 +26,7 @@ const Router = () => {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/storage-providers" element={<StorageProvidersPage />} />
           <Route path="/terminal" element={<TerminalPage />} />
+          <Route path="/chat-input-demo" element={<ChatInputDemoPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       ) : (
