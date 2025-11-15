@@ -561,6 +561,128 @@ ${content}`;
   getCacheStats() {
     return aiCache.getStats();
   }
+
+  /**
+   * Get code suggestions from AI
+   * @param {Object} params - Suggestion parameters
+   * @returns {Object} - Array of suggestions with confidence scores
+   */
+  async getCodeSuggestions(params) {
+    const {
+      userId,
+      sessionId,
+      context,
+      maxSuggestions = 5,
+      temperature = 0.3,
+      provider: preferredProvider = null,
+    } = params;
+
+    const requestId = uuidv4();
+
+    try {
+      const { provider, providerName } = await this.getUserProvider(userId, preferredProvider);
+
+      const prompt = `You are an AI code completion assistant. Based on the following context, provide ${maxSuggestions} relevant code suggestions.
+
+Language: ${context.language}
+Current line: ${context.currentLine}
+
+Code before cursor:
+\`\`\`
+${context.prefix.substring(Math.max(0, context.prefix.length - 300))}
+\`\`\`
+
+Code after cursor:
+\`\`\`
+${context.suffix.substring(0, 300)}
+\`\`\`
+
+Provide suggestions as a JSON array with this structure:
+[
+  {
+    "content": "suggested code",
+    "confidence": 0.95,
+    "description": "Brief description of what this does"
+  }
+]
+
+Focus on:
+1. Completing the current statement or expression
+2. Suggesting common patterns that fit the context
+3. Maintaining code style and conventions
+4. Only suggesting syntactically valid code
+
+Return ONLY the JSON array, no additional text.`;
+
+      const startTime = Date.now();
+      let fullResponse = '';
+
+      for await (const chunk of provider.streamCompletion({
+        prompt,
+        model: null,
+        maxTokens: 800,
+        temperature,
+        userId,
+        sessionId,
+      })) {
+        fullResponse += chunk.content;
+      }
+
+      let suggestions = [];
+      try {
+        const jsonMatch = fullResponse.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          suggestions = parsed
+            .filter((s) => s.content && s.confidence)
+            .slice(0, maxSuggestions)
+            .map((s, index) => ({
+              id: `${requestId}-${index}`,
+              content: s.content.trim(),
+              confidence: Math.min(1, Math.max(0, s.confidence)),
+              description: s.description || 'AI code suggestion',
+            }));
+        }
+      } catch (parseError) {
+        logger.warn('Failed to parse AI suggestions response', {
+          error: parseError.message,
+          response: fullResponse.substring(0, 200),
+        });
+
+        const lines = fullResponse.split('\n').filter((l) => l.trim());
+        suggestions = lines.slice(0, maxSuggestions).map((content, index) => ({
+          id: `${requestId}-${index}`,
+          content: content.trim(),
+          confidence: 0.6,
+          description: 'AI code suggestion',
+        }));
+      }
+
+      const duration = Date.now() - startTime;
+      logger.info('Code suggestions generated', {
+        userId,
+        sessionId,
+        provider: providerName,
+        suggestionCount: suggestions.length,
+        duration,
+      });
+
+      return {
+        suggestions,
+        requestId,
+        provider: providerName,
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      logger.error('Code suggestion error', {
+        userId,
+        sessionId,
+        error: error.message,
+        requestId,
+      });
+      throw error;
+    }
+  }
 }
 
 module.exports = new AIAssistantService();

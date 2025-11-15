@@ -29,6 +29,7 @@ const WorkspacePage = () => {
   const [theme, setTheme] = useState<'vs' | 'vs-dark' | 'hc-black'>('vs-dark');
   const [isLoading, setIsLoading] = useState(true);
   const [otClient, setOTClient] = useState<OTClient | null>(null);
+  const [aiChatMessage, setAiChatMessage] = useState<string>('');
 
   const user = useAppSelector((state) => state.auth.user);
   const { documentContent, currentRoom } = useAppSelector((state) => state.collaboration);
@@ -142,6 +143,10 @@ const WorkspacePage = () => {
     // Implementation would send cursor update via WebSocket
   }, []);
 
+  const handleAIContextRequest = useCallback((code: string, lang: string, prompt: string) => {
+    setAiChatMessage(prompt);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex flex-col h-full gap-4 p-4">
@@ -190,6 +195,8 @@ const WorkspacePage = () => {
             theme={theme}
             onOperationChange={handleOperationChange}
             onCursorChange={handleCursorChange}
+            enableAICompletion={true}
+            onAIContextRequest={handleAIContextRequest}
           />
         </div>
 
@@ -205,7 +212,7 @@ const WorkspacePage = () => {
       {/* AI Chat Interface */}
       <div className="mt-4 px-4 pb-6">
         <div className="h-[28rem]">
-          <ChatInterface />
+          <ChatInterface initialMessage={aiChatMessage} />
         </div>
       </div>
     </div>

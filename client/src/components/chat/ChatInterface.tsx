@@ -217,7 +217,11 @@ const EmptyState = () => (
   </div>
 );
 
-const ChatInterface: React.FC = () => {
+interface ChatInterfaceProps {
+  initialMessage?: string;
+}
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
   const dispatch = useAppDispatch();
   const { activeConversation, conversations, isLoading, isSubmitting, error } = useAppSelector(
     (state) => state.ai
@@ -712,9 +716,11 @@ const ChatInterface: React.FC = () => {
 
       <footer className="border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
         <ChatInput
+          key={initialMessage}
           onSubmit={handleSendMessage}
           isLoading={isSubmitting || isStreaming}
           disabled={!activeConversation || isSubmitting || isStreaming || (!isOnline && queueFull)}
+          initialValue={initialMessage}
           placeholder={
             !isOnline
               ? queueFull

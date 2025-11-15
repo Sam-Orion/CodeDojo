@@ -232,3 +232,48 @@ export interface Toast {
 export interface ToastState {
   toasts: Toast[];
 }
+
+// AI Code Completion types
+export interface AICodeSuggestion {
+  id: string;
+  content: string;
+  confidence: number;
+  description?: string;
+  range?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+}
+
+export interface AICompletionContext {
+  language: string;
+  fileContent: string;
+  cursorPosition: number;
+  prefix: string;
+  suffix: string;
+  currentLine: string;
+  fileName?: string;
+}
+
+export interface AICompletionRequest {
+  context: AICompletionContext;
+  maxSuggestions?: number;
+  temperature?: number;
+}
+
+export interface AICompletionResponse {
+  suggestions: AICodeSuggestion[];
+  requestId: string;
+  provider: string;
+  model?: string;
+}
+
+export interface AISuggestionTelemetry {
+  requestId: string;
+  suggestionId: string;
+  action: 'accepted' | 'rejected' | 'dismissed' | 'shown';
+  timestamp: number;
+  context?: Partial<AICompletionContext>;
+}
