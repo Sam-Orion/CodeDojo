@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState, type SVGProps } from '
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
   addSystemMessage,
-  addUserMessage,
   clearError,
   createConversation,
   fetchConversations,
@@ -10,11 +9,12 @@ import {
   sendMessage,
   setMessageFeedback,
 } from '../../store/slices/aiSlice';
-import { useStreamingMessages } from '../../hooks';
+import { useStreamingMessages, useOfflineMessageQueue } from '../../hooks';
 import type { AIMessage } from '../../types';
 import Button from '../ui/Button';
 import MarkdownRenderer from './MarkdownRenderer';
 import ChatInput from './ChatInput';
+import OfflineQueueIndicator from './OfflineQueueIndicator';
 
 const cn = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(' ');
@@ -226,6 +226,18 @@ const ChatInterface: React.FC = () => {
 
   const { startStream, stopStream, isStreaming, tokenCount } = useStreamingMessages();
 
+  const {
+    isOnline,
+    queueSize,
+    isRetrying,
+    retryProgress,
+    queueFull,
+    maxQueueSize,
+    queueMessage,
+    clearQueue,
+    retryNow,
+  } = useOfflineMessageQueue();
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasFetchedRef = useRef(false);
   const creatingConversationRef = useRef(false);
@@ -305,7 +317,6 @@ const ChatInterface: React.FC = () => {
             })
           );
         }
-        // eslint-disable-next-line no-console
         console.error('Failed to copy message:', copyError);
       }
     },
@@ -400,21 +411,33 @@ const ChatInterface: React.FC = () => {
         return;
       }
 
-      // Optimistically add user message to UI
-      dispatch(
-        addUserMessage({
-          conversationId: activeConversation.id,
-          content,
-        })
-      );
+      // If offline, queue the message
+      if (!isOnline) {
+        try {
+          queueMessage(content);
+          return;
+        } catch (error) {
+          // Show error if queue is full or other queueing issues
+          if (activeConversation) {
+            dispatch(
+              addSystemMessage({
+                conversationId: activeConversation.id,
+                content: error instanceof Error ? error.message : 'Failed to queue message',
+                status: 'error',
+              })
+            );
+          }
+          return;
+        }
+      }
 
-      // Use streaming for real-time token updates
+      // If online, use streaming for real-time token updates
       startStream({
         conversationId: activeConversation.id,
         content,
       });
     },
-    [activeConversation, isSubmitting, isStreaming, dispatch, startStream]
+    [activeConversation, isSubmitting, isStreaming, isOnline, dispatch, startStream, queueMessage]
   );
 
   return (
@@ -435,6 +458,19 @@ const ChatInterface: React.FC = () => {
           {messages.length} message{messages.length === 1 ? '' : 's'}
         </div>
       </header>
+
+      <div className="px-4 py-2">
+        <OfflineQueueIndicator
+          isOnline={isOnline}
+          queueSize={queueSize}
+          isRetrying={isRetrying}
+          retryProgress={retryProgress}
+          queueFull={queueFull}
+          maxQueueSize={maxQueueSize}
+          onRetryNow={retryNow}
+          onClearQueue={clearQueue}
+        />
+      </div>
 
       {error && (
         <div className="border-b border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
@@ -678,7 +714,16 @@ const ChatInterface: React.FC = () => {
         <ChatInput
           onSubmit={handleSendMessage}
           isLoading={isSubmitting || isStreaming}
-          disabled={!activeConversation || isSubmitting || isStreaming}
+          disabled={!activeConversation || isSubmitting || isStreaming || (!isOnline && queueFull)}
+          placeholder={
+            !isOnline
+              ? queueFull
+                ? 'Queue full. Clear queue to send messages...'
+                : 'Offline. Messages will be queued...'
+              : queueFull
+                ? 'Queue full. Clear queue to send more messages...'
+                : 'Type your message... (Shift+Enter for newline)'
+          }
         />
       </footer>
     </div>
