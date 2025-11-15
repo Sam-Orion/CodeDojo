@@ -3,6 +3,7 @@ import { useAppSelector } from '../store';
 
 export * from './useStreamingMessages';
 export * from './useOfflineMessageQueue';
+export * from './useAICodeSuggestions';
 
 export const useAuth = () => {
   const auth = useAppSelector((state) => state.auth);
