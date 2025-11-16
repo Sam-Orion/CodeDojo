@@ -9,6 +9,7 @@ import StorageProvidersPage from '../pages/StorageProvidersPage';
 import OAuthCallback from '../components/OAuthCallback';
 import TerminalPage from '../pages/TerminalPage';
 import ChatInputDemoPage from '../pages/ChatInputDemoPage';
+import AISettingsPage from '../pages/AISettingsPage';
 
 const Router = () => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
@@ -24,6 +25,7 @@ const Router = () => {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/workspace/:roomId" element={<WorkspacePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/ai-settings" element={<AISettingsPage />} />
           <Route path="/storage-providers" element={<StorageProvidersPage />} />
           <Route path="/terminal" element={<TerminalPage />} />
           <Route path="/chat-input-demo" element={<ChatInputDemoPage />} />
