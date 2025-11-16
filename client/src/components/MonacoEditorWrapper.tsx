@@ -6,7 +6,13 @@ import {
   addPendingOperation,
   pushUndoOperation,
 } from '../store/slices/collaborationSlice';
-import { Operation } from '../types';
+import { Operation, AICompletionContext, AICodeSuggestion } from '../types';
+import { useAICodeSuggestions } from '../hooks/useAICodeSuggestions';
+import {
+  AICompletionProvider,
+  registerAICompletionProvider,
+} from '../services/aiCompletionProvider';
+import { AIEditorActions } from '../services/aiEditorActions';
 
 const generateId = (): string => {
   return Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
@@ -18,6 +24,8 @@ interface MonacoEditorWrapperProps {
   readOnly?: boolean;
   language?: string;
   theme?: 'vs' | 'vs-dark' | 'hc-black';
+  enableAICompletion?: boolean;
+  onAIContextRequest?: (code: string, language: string, prompt: string) => void;
 }
 
 const MonacoEditorWrapper = ({
@@ -26,6 +34,8 @@ const MonacoEditorWrapper = ({
   readOnly = false,
   language = 'javascript',
   theme = 'vs-dark',
+  enableAICompletion = true,
+  onAIContextRequest,
 }: MonacoEditorWrapperProps) => {
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
@@ -33,6 +43,15 @@ const MonacoEditorWrapper = ({
   const dispatch = useAppDispatch();
   const { documentContent, participants } = useAppSelector((state) => state.collaboration);
   const userId = useAppSelector((state) => state.auth.user?.id);
+
+  const completionProviderRef = useRef<any>(null);
+  const aiActionsRef = useRef<AIEditorActions | null>(null);
+
+  const { requestSuggestions, trackSuggestion } = useAICodeSuggestions({
+    maxSuggestions: 5,
+    temperature: 0.3,
+    minConfidence: 0.5,
+  });
 
   useEffect(() => {
     if (monaco) {
@@ -147,6 +166,81 @@ const MonacoEditorWrapper = ({
     renderCursors();
   }, [participants, renderCursors]);
 
+  const wrapRequestSuggestions = useCallback(
+    async (context: AICompletionContext): Promise<AICodeSuggestion[]> => {
+      try {
+        const suggestions = await requestSuggestions(context);
+        return suggestions;
+      } catch (error) {
+        console.error('AI suggestion request failed:', error);
+        return [];
+      }
+    },
+    [requestSuggestions]
+  );
+
+  useEffect(() => {
+    if (monaco && enableAICompletion && !readOnly && !completionProviderRef.current) {
+      const provider = new AICompletionProvider({
+        requestSuggestions: wrapRequestSuggestions,
+        trackSuggestion,
+        language,
+      });
+
+      completionProviderRef.current = registerAICompletionProvider(monaco, language, provider);
+    }
+
+    return () => {
+      if (completionProviderRef.current) {
+        completionProviderRef.current.dispose();
+        completionProviderRef.current = null;
+      }
+    };
+  }, [monaco, enableAICompletion, readOnly, language, wrapRequestSuggestions, trackSuggestion]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && !readOnly && onAIContextRequest) {
+      if (aiActionsRef.current) {
+        aiActionsRef.current.dispose();
+      }
+
+      aiActionsRef.current = new AIEditorActions(editor, {
+        onExplainCode: (code: string, lang: string) => {
+          onAIContextRequest(
+            code,
+            lang,
+            `Explain the following ${lang} code:\n\n\`\`\`${lang}\n${code}\n\`\`\``
+          );
+        },
+        onRefactorCode: (code: string, lang: string) => {
+          onAIContextRequest(
+            code,
+            lang,
+            `Refactor and improve the following ${lang} code:\n\n\`\`\`${lang}\n${code}\n\`\`\``
+          );
+        },
+        onDebugCode: (code: string, lang: string) => {
+          onAIContextRequest(
+            code,
+            lang,
+            `Help me debug this ${lang} code. Identify potential issues:\n\n\`\`\`${lang}\n${code}\n\`\`\``
+          );
+        },
+        onAskAI: (code: string, lang: string, prompt: string) => {
+          onAIContextRequest(code, lang, `${prompt}\n\n\`\`\`${lang}\n${code}\n\`\`\``);
+        },
+      });
+    }
+
+    return () => {
+      if (aiActionsRef.current) {
+        aiActionsRef.current.dispose();
+        aiActionsRef.current = null;
+      }
+    };
+  }, [readOnly, onAIContextRequest]);
+
   return (
     <div className="flex flex-col h-full w-full">
       <Editor
@@ -176,6 +270,42 @@ const MonacoEditorWrapper = ({
           lineHeight: 1.6,
           wordWrap: 'on',
           wrappingIndent: 'indent',
+          quickSuggestions: enableAICompletion
+            ? {
+                other: true,
+                comments: false,
+                strings: false,
+              }
+            : false,
+          suggest: {
+            showMethods: true,
+            showFunctions: true,
+            showConstructors: true,
+            showFields: true,
+            showVariables: true,
+            showClasses: true,
+            showStructs: true,
+            showInterfaces: true,
+            showModules: true,
+            showProperties: true,
+            showEvents: true,
+            showOperators: true,
+            showUnits: true,
+            showValues: true,
+            showConstants: true,
+            showEnums: true,
+            showEnumMembers: true,
+            showKeywords: true,
+            showWords: true,
+            showColors: true,
+            showFiles: true,
+            showReferences: true,
+            showFolders: true,
+            showTypeParameters: true,
+            showSnippets: true,
+            preview: true,
+            previewMode: 'subwordSmart',
+          },
         }}
       />
     </div>

@@ -347,6 +347,91 @@ const streamMessage = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Get code suggestions
+ * @route POST /api/v1/ai/suggestions
+ */
+const getCodeSuggestions = asyncHandler(async (req, res) => {
+  const { context, maxSuggestions, temperature } = req.body;
+  const userId = req.user?.id;
+
+  if (!context || !context.language || !context.fileContent) {
+    return res.status(400).json({
+      success: false,
+      error: 'context with language and fileContent is required',
+    });
+  }
+
+  try {
+    const sessionId = req.body.sessionId || `suggestions-${Date.now()}`;
+
+    const result = await aiAssistantService.getCodeSuggestions({
+      userId,
+      sessionId,
+      context,
+      maxSuggestions,
+      temperature,
+      provider: req.body.provider,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error('Code suggestions error', {
+      error: error.message,
+      userId,
+    });
+
+    if (error.message.includes('timeout')) {
+      return res.status(408).json({
+        success: false,
+        error: 'Request timeout. Please try again.',
+      });
+    }
+
+    if (error.message.includes('rate limit')) {
+      return res.status(429).json({
+        success: false,
+        error: 'Rate limit exceeded. Please wait before requesting more suggestions.',
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get code suggestions',
+    });
+  }
+});
+
+/**
+ * Submit telemetry for AI suggestions
+ * @route POST /api/v1/ai/suggestions/telemetry
+ */
+const submitSuggestionTelemetry = asyncHandler(async (req, res) => {
+  const { requestId, suggestionId, action, timestamp, context } = req.body;
+  const userId = req.user?.id;
+
+  if (!requestId || !suggestionId || !action) {
+    return res.status(400).json({
+      success: false,
+      error: 'requestId, suggestionId, and action are required',
+    });
+  }
+
+  logger.info('AI suggestion telemetry received', {
+    userId,
+    requestId,
+    suggestionId,
+    action,
+    timestamp: timestamp || Date.now(),
+    contextLanguage: context?.language,
+  });
+
+  res.json({ success: true });
+});
+
 module.exports = {
   streamCompletion,
   explainCode,
@@ -357,4 +442,6 @@ module.exports = {
   submitFeedback,
   submitMessage,
   streamMessage,
+  getCodeSuggestions,
+  submitSuggestionTelemetry,
 };

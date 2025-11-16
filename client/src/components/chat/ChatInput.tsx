@@ -1,4 +1,4 @@
-import React, { KeyboardEvent, useRef, useState, type SVGProps } from 'react';
+import React, { KeyboardEvent, useRef, useState, useEffect, type SVGProps } from 'react';
 import Button from '../ui/Button';
 
 const SendIcon = (props: SVGProps<SVGSVGElement>) => (
@@ -20,6 +20,7 @@ interface ChatInputProps {
   isLoading?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  initialValue?: string;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -27,9 +28,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
   isLoading = false,
   disabled = false,
   placeholder = 'Type your message... (Shift+Enter for newline)',
+  initialValue = '',
 }) => {
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState(() => initialValue);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [inputValue]);
 
   const handleSubmit = () => {
     const trimmedValue = inputValue.trim();

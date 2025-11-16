@@ -70,4 +70,18 @@ router.post('/messages/stream', aiAssistantController.streamMessage);
  */
 router.post('/messages', aiAssistantController.submitMessage);
 
+/**
+ * @route POST /api/v1/ai/suggestions
+ * @desc Get AI code suggestions based on context
+ * @access Private
+ */
+router.post('/suggestions', aiAssistantController.getCodeSuggestions);
+
+/**
+ * @route POST /api/v1/ai/suggestions/telemetry
+ * @desc Submit telemetry for AI suggestions
+ * @access Private
+ */
+router.post('/suggestions/telemetry', aiAssistantController.submitSuggestionTelemetry);
+
 module.exports = router;
