@@ -10,6 +10,7 @@ import terminalSlice from './slices/terminalSlice';
 import aiSlice from './slices/aiSlice';
 import storageProviderSlice from './slices/storageProviderSlice';
 import toastSlice, { addToast } from './slices/toastSlice';
+import aiSettingsSlice from './slices/aiSettingsSlice';
 
 // Zod schema for validating the entire Redux state
 export const RootStateSchema = z.object({
@@ -107,6 +108,21 @@ export const RootStateSchema = z.object({
       })
     ),
   }),
+  aiSettings: z.object({
+    credentials: z.array(z.any()),
+    settings: z.object({
+      defaultProvider: z.string().nullable(),
+      chatProvider: z.string().nullable(),
+      codeProvider: z.string().nullable(),
+      fallbackProvider: z.string().nullable(),
+    }),
+    usageStats: z.any().nullable(),
+    supportedProviders: z.array(z.any()),
+    isLoading: z.boolean(),
+    isTesting: z.record(z.string(), z.boolean()),
+    error: z.string().nullable(),
+    testResults: z.record(z.string(), z.any()),
+  }),
 });
 
 export type RootState = z.infer<typeof RootStateSchema>;
@@ -156,6 +172,7 @@ export const store = configureStore({
     ai: aiSlice,
     storageProvider: storageProviderSlice,
     toast: toastSlice,
+    aiSettings: aiSettingsSlice,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

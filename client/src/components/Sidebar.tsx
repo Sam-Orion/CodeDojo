@@ -63,6 +63,13 @@ const Sidebar = () => {
             isOpen={isOpen}
           />
           <SidebarLink
+            to="/ai-settings"
+            icon="🤖"
+            label="AI Providers"
+            isActive={isActive('/ai-settings')}
+            isOpen={isOpen}
+          />
+          <SidebarLink
             to="/settings"
             icon="⚙️"
             label="Settings"
