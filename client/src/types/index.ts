@@ -149,6 +149,8 @@ export interface AIConversation {
   messages: AIMessage[];
   createdAt: string;
   updatedAt: string;
+  title?: string;
+  isFavorite?: boolean;
 }
 
 export type AIMessageRole = 'user' | 'assistant' | 'system';

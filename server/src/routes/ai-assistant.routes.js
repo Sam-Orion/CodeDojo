@@ -84,4 +84,32 @@ router.post('/suggestions', aiAssistantController.getCodeSuggestions);
  */
 router.post('/suggestions/telemetry', aiAssistantController.submitSuggestionTelemetry);
 
+/**
+ * @route POST /api/v1/ai/conversations
+ * @desc Create a new conversation
+ * @access Private
+ */
+router.post('/conversations', aiAssistantController.createConversation);
+
+/**
+ * @route GET /api/v1/ai/conversations
+ * @desc Fetch all conversations for the user
+ * @access Private
+ */
+router.get('/conversations', aiAssistantController.getConversations);
+
+/**
+ * @route PATCH /api/v1/ai/conversations/:conversationId
+ * @desc Update conversation (rename, favorite)
+ * @access Private
+ */
+router.patch('/conversations/:conversationId', aiAssistantController.updateConversation);
+
+/**
+ * @route DELETE /api/v1/ai/conversations/:conversationId
+ * @desc Delete a conversation
+ * @access Private
+ */
+router.delete('/conversations/:conversationId', aiAssistantController.deleteConversation);
+
 module.exports = router;
