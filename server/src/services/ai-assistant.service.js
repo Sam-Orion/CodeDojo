@@ -1,6 +1,6 @@
 const aiProviderFactory = require('./ai/ai-provider-factory');
 const aiCache = require('./ai/ai-cache');
-const { AICredential } = require('../models');
+const { AICredential, AIConversation } = require('../models');
 const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
 
@@ -53,6 +53,68 @@ class AIAssistantService {
     } catch (error) {
       logger.error('Failed to initialize AI providers', { error: error.message });
     }
+  }
+
+  /**
+   * Ensure a conversation exists for the given user
+   * @param {string} userId
+   * @param {string} conversationId
+   * @returns {Promise<AIConversation>}
+   */
+  async ensureConversation(userId, conversationId) {
+    if (!conversationId) {
+      throw new Error('Conversation ID is required');
+    }
+
+    let conversation = await AIConversation.findByUserAndId(userId, conversationId);
+    if (!conversation) {
+      conversation = new AIConversation({
+        conversationId,
+        userId,
+        title: null,
+        messages: [],
+        isFavorite: false,
+        metadata: {},
+      });
+    }
+
+    return conversation;
+  }
+
+  /**
+   * Append messages to a conversation and persist it
+   * @param {string} userId
+   * @param {string} conversationId
+   * @param {Array<object>} messages
+   */
+  async addMessagesToConversation(userId, conversationId, messages = []) {
+    if (!messages || messages.length === 0) {
+      return null;
+    }
+
+    const conversation = await this.ensureConversation(userId, conversationId);
+    messages.forEach((message) => conversation.addMessage(message));
+    await conversation.save();
+    return conversation;
+  }
+
+  /**
+   * Update a conversation message
+   * @param {string} userId
+   * @param {string} conversationId
+   * @param {string} messageId
+   * @param {object} updates
+   */
+  async updateConversationMessage(userId, conversationId, messageId, updates) {
+    const conversation = await AIConversation.findByUserAndId(userId, conversationId);
+    if (!conversation) {
+      return null;
+    }
+    const updated = conversation.updateMessage(messageId, updates);
+    if (updated) {
+      await conversation.save();
+    }
+    return updated ? conversation : null;
   }
 
   /**
@@ -403,6 +465,9 @@ ${code}
         feedback: null,
       };
 
+      // Persist the user's message immediately
+      await this.addMessagesToConversation(userId, conversationId, [userMessage]);
+
       // Prepare prompt for AI
       const prompt = `You are a helpful AI assistant. Please respond to the following message:
 
@@ -448,6 +513,9 @@ ${content}`;
         feedback: null,
       };
 
+      // Save assistant message
+      await this.addMessagesToConversation(userId, conversationId, [assistantMessage]);
+
       logger.info('Message processed successfully', {
         userId,
         conversationId,
@@ -483,6 +551,29 @@ ${content}`;
       // Get user provider or default
       const { provider, providerName } = await this.getUserProvider(userId, preferredProvider);
 
+      // Generate unique message IDs
+      const userMessageId = uuidv4();
+      const assistantMessageId = uuidv4();
+      const timestamp = Date.now();
+
+      // Create and save user message immediately
+      const userMessage = {
+        id: userMessageId,
+        role: 'user',
+        content,
+        timestamp,
+        status: 'success',
+        feedback: null,
+      };
+
+      await this.addMessagesToConversation(userId, conversationId, [userMessage]);
+
+      // Yield user message info
+      yield {
+        type: 'userMessage',
+        messageId: userMessageId,
+      };
+
       // Prepare prompt for AI
       const prompt = `You are a helpful AI assistant. Please respond to the following message:
 
@@ -496,6 +587,13 @@ ${content}`;
       });
 
       let totalTokens = 0;
+      let assistantContent = '';
+
+      // Send assistant message ID
+      yield {
+        type: 'assistantMessageId',
+        messageId: assistantMessageId,
+      };
 
       // Stream completion from provider
       const stream = provider.streamCompletion({
@@ -506,6 +604,7 @@ ${content}`;
 
       for await (const chunk of stream) {
         if (chunk.type === 'content' && chunk.content) {
+          assistantContent += chunk.content;
           // Stream each token/chunk as it arrives
           yield {
             type: 'token',
@@ -521,6 +620,20 @@ ${content}`;
           };
         }
       }
+
+      // Save the assistant message to database
+      const assistantMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: assistantContent,
+        timestamp: Date.now(),
+        model: providerName,
+        tokenCount: totalTokens,
+        status: 'success',
+        feedback: null,
+      };
+
+      await this.addMessagesToConversation(userId, conversationId, [assistantMessage]);
 
       logger.info('Message stream completed', {
         userId,

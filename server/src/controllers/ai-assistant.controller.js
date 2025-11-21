@@ -1,6 +1,7 @@
 const aiAssistantService = require('../services/ai-assistant.service');
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
+const { AIConversation } = require('../models');
 
 /**
  * Stream code completion
@@ -438,6 +439,7 @@ const submitSuggestionTelemetry = asyncHandler(async (req, res) => {
  */
 const createConversation = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
+  const { title } = req.body;
 
   if (!userId) {
     return res.status(401).json({
@@ -446,20 +448,24 @@ const createConversation = asyncHandler(async (req, res) => {
     });
   }
 
-  const conversation = {
-    id: `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    messages: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    title: undefined,
-    isFavorite: false,
-  };
+  const conversationId = `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-  logger.info('Conversation created', { userId, conversationId: conversation.id });
+  const conversation = new AIConversation({
+    conversationId,
+    userId,
+    title: title || null,
+    messages: [],
+    isFavorite: false,
+    metadata: {},
+  });
+
+  await conversation.save();
+
+  logger.info('Conversation created', { userId, conversationId });
 
   res.json({
     success: true,
-    data: conversation,
+    data: conversation.toJSON(),
   });
 });
 
@@ -477,12 +483,55 @@ const getConversations = asyncHandler(async (req, res) => {
     });
   }
 
-  // For now, return empty array. This would be persisted to a database in production.
-  const conversations = [];
+  const { limit, skip, sortBy, sortOrder } = req.query;
+
+  const conversations = await AIConversation.findByUser(userId, {
+    limit: limit ? parseInt(limit) : 50,
+    skip: skip ? parseInt(skip) : 0,
+    sortBy: sortBy || 'updatedAt',
+    sortOrder: sortOrder ? parseInt(sortOrder) : -1,
+  });
 
   res.json({
     success: true,
-    data: conversations,
+    data: conversations.map((conv) => conv.toJSON()),
+  });
+});
+
+/**
+ * Get a single conversation with messages
+ * @route GET /api/v1/ai/conversations/:conversationId
+ */
+const getConversation = asyncHandler(async (req, res) => {
+  const { conversationId } = req.params;
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'User not authenticated',
+    });
+  }
+
+  if (!conversationId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Conversation ID is required',
+    });
+  }
+
+  const conversation = await AIConversation.findByUserAndId(userId, conversationId);
+
+  if (!conversation) {
+    return res.status(404).json({
+      success: false,
+      error: 'Conversation not found',
+    });
+  }
+
+  res.json({
+    success: true,
+    data: conversation.toJSON(),
   });
 });
 
@@ -517,14 +566,25 @@ const updateConversation = asyncHandler(async (req, res) => {
     });
   }
 
-  const updatedConversation = {
-    id: conversationId,
-    messages: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    title: title || undefined,
-    isFavorite: Boolean(isFavorite),
-  };
+  const conversation = await AIConversation.findByUserAndId(userId, conversationId);
+
+  if (!conversation) {
+    return res.status(404).json({
+      success: false,
+      error: 'Conversation not found',
+    });
+  }
+
+  // Update fields
+  if (title !== undefined) {
+    conversation.title = title.trim();
+  }
+  if (isFavorite !== undefined) {
+    conversation.isFavorite = Boolean(isFavorite);
+  }
+
+  conversation.updatedAt = new Date();
+  await conversation.save();
 
   logger.info('Conversation updated', {
     userId,
@@ -535,7 +595,7 @@ const updateConversation = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: updatedConversation,
+    data: conversation.toJSON(),
   });
 });
 
@@ -561,6 +621,17 @@ const deleteConversation = asyncHandler(async (req, res) => {
     });
   }
 
+  const conversation = await AIConversation.findByUserAndId(userId, conversationId);
+
+  if (!conversation) {
+    return res.status(404).json({
+      success: false,
+      error: 'Conversation not found',
+    });
+  }
+
+  await AIConversation.deleteOne({ conversationId, userId });
+
   logger.info('Conversation deleted', { userId, conversationId });
 
   res.json({
@@ -583,6 +654,7 @@ module.exports = {
   submitSuggestionTelemetry,
   createConversation,
   getConversations,
+  getConversation,
   updateConversation,
   deleteConversation,
 };
