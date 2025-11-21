@@ -24,6 +24,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import ChatInput from './ChatInput';
 import OfflineQueueIndicator from './OfflineQueueIndicator';
 import ConversationExportModal from './ConversationExportModal';
+import ConversationMetadataPanel from './ConversationMetadataPanel';
 
 const cn = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(' ');
@@ -550,6 +551,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
             </Button>
           </div>
         </header>
+
+        {activeConversation && (
+          <div className="px-4 pt-4">
+            <ConversationMetadataPanel conversation={activeConversation} />
+          </div>
+        )}
 
         <div className="px-4 py-2">
           <OfflineQueueIndicator

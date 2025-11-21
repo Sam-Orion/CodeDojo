@@ -10,6 +10,7 @@ import {
 } from '../../store/slices/aiSlice';
 import type { AIConversation } from '../../types';
 import Button from '../ui/Button';
+import { getConversationMetadata } from '../../utils/conversationAnalytics';
 
 const cn = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(' ');
@@ -139,10 +140,15 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({
     setIsRenaming(false);
   }, [conversation]);
 
-  const messageCount = conversation.messages.length;
+  const metadata = useMemo(() => getConversationMetadata(conversation), [conversation]);
+  const messageCount = metadata.messageCount;
   const lastMessage = conversation.messages[conversation.messages.length - 1];
-  const lastModified = new Date(conversation.updatedAt);
-  const formattedDate = formatDate(lastModified);
+  const totalTokens = metadata.tokenCount;
+  const providerBadges = metadata.providersUsed.slice(0, 3);
+  const extraProviders = metadata.providersUsed.length - providerBadges.length;
+  const updatedDate = metadata.lastModified ? new Date(metadata.lastModified) : null;
+  const formattedUpdated =
+    updatedDate && !Number.isNaN(updatedDate.getTime()) ? formatDate(updatedDate) : 'now';
 
   return (
     <div
@@ -191,6 +197,32 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({
             {lastMessage?.content.substring(0, 50) || 'No messages yet'}
             {lastMessage && lastMessage.content.length > 50 ? '...' : ''}
           </span>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+            <span>
+              {messageCount} message{messageCount !== 1 ? 's' : ''}
+            </span>
+            <span>• Updated {formattedUpdated}</span>
+            {totalTokens > 0 && (
+              <span className="text-[10px]">• {totalTokens.toLocaleString()} tokens</span>
+            )}
+          </div>
+          {metadata.providersUsed.length > 0 ? (
+            <div className="flex flex-wrap gap-1 text-[10px] text-gray-500 dark:text-gray-400">
+              {providerBadges.map((provider) => (
+                <span
+                  key={provider}
+                  className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                >
+                  {provider}
+                </span>
+              ))}
+              {extraProviders > 0 && (
+                <span className="text-[10px] text-gray-400">+{extraProviders} more</span>
+              )}
+            </div>
+          ) : (
+            <span className="text-[10px] text-gray-400">No provider data yet</span>
+          )}
         </button>
         <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
@@ -222,12 +254,6 @@ const ConversationListItem: React.FC<ConversationListItemProps> = ({
             <TrashIcon className="h-4 w-4" />
           </button>
         </div>
-      </div>
-      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-        <span>
-          {messageCount} message{messageCount !== 1 ? 's' : ''}
-        </span>
-        <span>{formattedDate}</span>
       </div>
     </div>
   );

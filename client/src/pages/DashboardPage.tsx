@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppSelector } from '../store';
 import Button from '../components/ui/Button';
 import Card, { CardHeader, CardBody, CardFooter } from '../components/ui/Card';
+import ConversationAnalyticsDashboard from '../components/chat/ConversationAnalyticsDashboard';
 
 const DashboardPage = () => {
   const { user } = useAppSelector((state) => state.auth);
@@ -17,6 +18,9 @@ const DashboardPage = () => {
         <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Dashboard</h1>
         <p className="text-lg text-gray-600 dark:text-gray-400">Welcome back, {user?.username}!</p>
       </div>
+
+      {/* Conversation Analytics Dashboard */}
+      <ConversationAnalyticsDashboard />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <Card>
