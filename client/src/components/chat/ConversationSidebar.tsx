@@ -3,6 +3,7 @@ import { useAppDispatch, useAppSelector } from '../../store';
 import {
   setActiveConversation,
   createConversation,
+  fetchConversation,
   renameConversation,
   deleteConversation,
   toggleFavoriteConversation,
@@ -281,6 +282,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({ className }) 
   const handleSelectConversation = useCallback(
     (conversation: AIConversation) => {
       dispatch(setActiveConversation(conversation));
+      dispatch(fetchConversation(conversation.id));
     },
     [dispatch]
   );

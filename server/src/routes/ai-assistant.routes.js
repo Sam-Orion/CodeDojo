@@ -99,6 +99,13 @@ router.post('/conversations', aiAssistantController.createConversation);
 router.get('/conversations', aiAssistantController.getConversations);
 
 /**
+ * @route GET /api/v1/ai/conversations/:conversationId
+ * @desc Fetch a single conversation with its messages
+ * @access Private
+ */
+router.get('/conversations/:conversationId', aiAssistantController.getConversation);
+
+/**
  * @route PATCH /api/v1/ai/conversations/:conversationId
  * @desc Update conversation (rename, favorite)
  * @access Private

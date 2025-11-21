@@ -34,6 +34,20 @@ export const fetchConversations = createAsyncThunk('ai/fetchConversations', asyn
   return data.data;
 });
 
+export const fetchConversation = createAsyncThunk(
+  'ai/fetchConversation',
+  async (conversationId: string) => {
+    const response = await fetch(`/api/v1/ai/conversations/${conversationId}`);
+    const data: ApiResponse<AIConversation> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error || 'Failed to fetch conversation');
+    }
+
+    return data.data;
+  }
+);
+
 export const sendMessage = createAsyncThunk(
   'ai/sendMessage',
   async (
@@ -523,6 +537,40 @@ const aiSlice = createSlice({
       .addCase(fetchConversations.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.error.message || 'Failed to fetch conversations';
+      })
+      // Fetch Conversation
+      .addCase(fetchConversation.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchConversation.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const normalizedConversation = {
+          ...action.payload,
+          messages: action.payload.messages?.map((message) => normalizeMessage(message)) ?? [],
+        };
+
+        // Update or add conversation in list
+        const index = state.conversations.findIndex((c) => c.id === normalizedConversation.id);
+        if (index !== -1) {
+          state.conversations[index] = normalizedConversation;
+        } else {
+          state.conversations.push(normalizedConversation);
+        }
+
+        // Set as active if not already set or if it's the same conversation
+        if (
+          !state.activeConversation ||
+          state.activeConversation.id === normalizedConversation.id
+        ) {
+          state.activeConversation = normalizedConversation;
+        }
+
+        state.error = null;
+      })
+      .addCase(fetchConversation.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.error.message || 'Failed to fetch conversation';
       })
       // Send Message
       .addCase(sendMessage.pending, (state) => {
