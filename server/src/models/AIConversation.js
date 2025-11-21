@@ -81,6 +81,24 @@ const aiConversationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    status: {
+      type: String,
+      enum: ['active', 'archived', 'deleted'],
+      default: 'active',
+      index: true,
+    },
+    archivedAt: {
+      type: Date,
+      default: null,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    deletedBy: {
+      type: String,
+      default: null,
+    },
     metadata: {
       type: Map,
       of: mongoose.Schema.Types.Mixed,
@@ -96,6 +114,7 @@ const aiConversationSchema = new mongoose.Schema(
 aiConversationSchema.index({ userId: 1, createdAt: -1 });
 aiConversationSchema.index({ userId: 1, isFavorite: 1 });
 aiConversationSchema.index({ userId: 1, updatedAt: -1 });
+aiConversationSchema.index({ userId: 1, status: 1 });
 
 /**
  * Static method to find conversation by ID and user
@@ -108,8 +127,18 @@ aiConversationSchema.statics.findByUserAndId = async function (userId, conversat
  * Static method to find all conversations for a user
  */
 aiConversationSchema.statics.findByUser = async function (userId, options = {}) {
-  const { limit = 50, skip = 0, sortBy = 'updatedAt', sortOrder = -1 } = options;
-  return this.find({ userId })
+  const { limit = 50, skip = 0, sortBy = 'updatedAt', sortOrder = -1, status } = options;
+  const query = { userId };
+
+  if (status && status !== 'all') {
+    if (Array.isArray(status)) {
+      query.status = { $in: status };
+    } else {
+      query.status = status;
+    }
+  }
+
+  return this.find(query)
     .sort({ [sortBy]: sortOrder })
     .skip(skip)
     .limit(limit);
@@ -182,6 +211,10 @@ aiConversationSchema.methods.toJSON = function () {
       errorDetails: msg.errorDetails,
     })),
     isFavorite: this.isFavorite,
+    status: this.status,
+    archivedAt: this.archivedAt ? this.archivedAt.toISOString() : null,
+    deletedAt: this.deletedAt ? this.deletedAt.toISOString() : null,
+    deletedBy: this.deletedBy,
     createdAt: this.createdAt.toISOString(),
     updatedAt: this.updatedAt.toISOString(),
     metadata: this.metadata ? Object.fromEntries(this.metadata) : {},

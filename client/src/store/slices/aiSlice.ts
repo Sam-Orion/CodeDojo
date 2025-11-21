@@ -5,6 +5,7 @@ import {
   AIMessageFeedback,
   AIMessageStatus,
   AIState,
+  ConversationStatus,
 } from '../../types';
 import { ApiResponse } from '../../types';
 
@@ -23,16 +24,19 @@ export const createConversation = createAsyncThunk('ai/createConversation', asyn
   return data.data;
 });
 
-export const fetchConversations = createAsyncThunk('ai/fetchConversations', async () => {
-  const response = await fetch('/api/v1/ai/conversations');
-  const data: ApiResponse<AIConversation[]> = await response.json();
+export const fetchConversations = createAsyncThunk(
+  'ai/fetchConversations',
+  async (status: ConversationStatus = 'active') => {
+    const response = await fetch(`/api/v1/ai/conversations?status=${status}`);
+    const data: ApiResponse<AIConversation[]> = await response.json();
 
-  if (!data.success || !data.data) {
-    throw new Error(data.error || 'Failed to fetch conversations');
+    if (!data.success || !data.data) {
+      throw new Error(data.error || 'Failed to fetch conversations');
+    }
+
+    return { status, conversations: data.data };
   }
-
-  return data.data;
-});
+);
 
 export const fetchConversation = createAsyncThunk(
   'ai/fetchConversation',
@@ -199,19 +203,54 @@ export const renameConversation = createAsyncThunk(
   }
 );
 
+export const updateConversationStatus = createAsyncThunk(
+  'ai/updateConversationStatus',
+  async ({
+    conversationId,
+    status,
+  }: {
+    conversationId: string;
+    status: Extract<ConversationStatus, 'active' | 'archived'>;
+  }) => {
+    const response = await fetch(`/api/v1/ai/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const data: ApiResponse<AIConversation> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error || 'Failed to update conversation status');
+    }
+
+    return data.data;
+  }
+);
+
 export const deleteConversation = createAsyncThunk(
   'ai/deleteConversation',
-  async (conversationId: string) => {
-    const response = await fetch(`/api/v1/ai/conversations/${conversationId}`, {
+  async ({ conversationId, force = false }: { conversationId: string; force?: boolean }) => {
+    const endpoint = force
+      ? `/api/v1/ai/conversations/${conversationId}?force=true`
+      : `/api/v1/ai/conversations/${conversationId}`;
+
+    const response = await fetch(endpoint, {
       method: 'DELETE',
     });
-    const data: ApiResponse<{ id: string }> = await response.json();
+    const data: ApiResponse<AIConversation | { id: string; hardDeleted?: boolean }> =
+      await response.json();
 
-    if (!data.success) {
+    if (!data.success || !data.data) {
       throw new Error(data.error || 'Failed to delete conversation');
     }
 
-    return conversationId;
+    const payload = data.data as AIConversation & { id: string; hardDeleted?: boolean };
+
+    if ('messages' in payload && payload.messages) {
+      return { type: 'soft' as const, conversation: payload };
+    }
+
+    return { type: 'hard' as const, conversationId: payload.id };
   }
 );
 
@@ -240,12 +279,80 @@ const normalizeMessage = (message: AIMessage): AIMessage => ({
   feedback: message.feedback ?? null,
 });
 
+const normalizeConversation = (conversation: AIConversation): AIConversation => ({
+  ...conversation,
+  status: conversation.status ?? 'active',
+  archivedAt: conversation.archivedAt ?? null,
+  deletedAt: conversation.deletedAt ?? null,
+  deletedBy: conversation.deletedBy ?? null,
+  messages: conversation.messages?.map((message) => normalizeMessage(message)) ?? [],
+});
+
+const DEFAULT_CACHE_MAX_AGE_DAYS = 30;
+
+const sortByUpdatedAtDesc = (list: AIConversation[]) =>
+  list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+const findConversationInState = (state: AIState, conversationId: string) =>
+  state.conversations.find((c) => c.id === conversationId) ||
+  state.archivedConversations.find((c) => c.id === conversationId) ||
+  state.deletedConversations.find((c) => c.id === conversationId);
+
+const applyUpdateToConversation = (
+  state: AIState,
+  conversationId: string,
+  updater: (conversation: AIConversation) => void
+) => {
+  const conversation = findConversationInState(state, conversationId);
+  if (conversation) {
+    updater(conversation);
+  }
+
+  if (
+    state.activeConversation?.id === conversationId &&
+    state.activeConversation !== conversation
+  ) {
+    updater(state.activeConversation);
+  }
+};
+
+const removeConversationFromLists = (state: AIState, conversationId: string) => {
+  state.conversations = state.conversations.filter((c) => c.id !== conversationId);
+  state.archivedConversations = state.archivedConversations.filter((c) => c.id !== conversationId);
+  state.deletedConversations = state.deletedConversations.filter((c) => c.id !== conversationId);
+};
+
+const upsertConversation = (state: AIState, conversation: AIConversation) => {
+  removeConversationFromLists(state, conversation.id);
+
+  const targetList =
+    conversation.status === 'archived'
+      ? state.archivedConversations
+      : conversation.status === 'deleted'
+        ? state.deletedConversations
+        : state.conversations;
+
+  targetList.push(conversation);
+  sortByUpdatedAtDesc(targetList);
+
+  if (state.activeConversation?.id === conversation.id) {
+    state.activeConversation = conversation;
+  }
+};
+
+const setActiveToFallbackConversation = (state: AIState) => {
+  state.activeConversation = state.conversations[0] ?? null;
+};
+
 const initialState: AIState = {
   conversations: [],
+  archivedConversations: [],
+  deletedConversations: [],
   activeConversation: null,
   isLoading: false,
   isSubmitting: false,
   error: null,
+  cacheLastCleanup: null,
 };
 
 const aiSlice = createSlice({
@@ -269,39 +376,20 @@ const aiSlice = createSlice({
         feedback: null,
       };
 
-      const conversation = state.conversations.find((c) => c.id === conversationId);
-      if (conversation) {
+      applyUpdateToConversation(state, conversationId, (conversation) => {
         conversation.messages.push({ ...baseMessage });
         conversation.updatedAt = new Date().toISOString();
-      }
-
-      if (
-        state.activeConversation?.id === conversationId &&
-        state.activeConversation !== conversation
-      ) {
-        state.activeConversation.messages.push({ ...baseMessage });
-        state.activeConversation.updatedAt = new Date().toISOString();
-      }
+      });
     },
     removeMessage: (
       state,
       action: PayloadAction<{ conversationId: string; messageId: string }>
     ) => {
       const { conversationId, messageId } = action.payload;
-      const conversation = state.conversations.find((c) => c.id === conversationId);
-      if (conversation) {
+      applyUpdateToConversation(state, conversationId, (conversation) => {
         conversation.messages = conversation.messages.filter((m) => m.id !== messageId);
         conversation.updatedAt = new Date().toISOString();
-      }
-      if (
-        state.activeConversation?.id === conversationId &&
-        state.activeConversation !== conversation
-      ) {
-        state.activeConversation.messages = state.activeConversation.messages.filter(
-          (m) => m.id !== messageId
-        );
-        state.activeConversation.updatedAt = new Date().toISOString();
-      }
+      });
     },
     setMessageFeedback: (
       state,
@@ -312,22 +400,12 @@ const aiSlice = createSlice({
       }>
     ) => {
       const { conversationId, messageId, feedback } = action.payload;
-      const updateFeedback = (message?: AIMessage) => {
-        if (message) {
-          message.feedback = feedback;
+      applyUpdateToConversation(state, conversationId, (conversation) => {
+        const target = conversation.messages.find((m) => m.id === messageId);
+        if (target) {
+          target.feedback = feedback;
         }
-      };
-
-      const conversation = state.conversations.find((c) => c.id === conversationId);
-      if (conversation) {
-        updateFeedback(conversation.messages.find((m) => m.id === messageId));
-      }
-      if (
-        state.activeConversation?.id === conversationId &&
-        state.activeConversation !== conversation
-      ) {
-        updateFeedback(state.activeConversation.messages.find((m) => m.id === messageId));
-      }
+      });
     },
     addSystemMessage: (
       state,
@@ -350,18 +428,10 @@ const aiSlice = createSlice({
       };
       const systemMessage = normalizeMessage(baseSystemMessage);
 
-      const conversation = state.conversations.find((c) => c.id === conversationId);
-      if (conversation) {
+      applyUpdateToConversation(state, conversationId, (conversation) => {
         conversation.messages.push({ ...systemMessage });
         conversation.updatedAt = new Date().toISOString();
-      }
-      if (
-        state.activeConversation?.id === conversationId &&
-        state.activeConversation !== conversation
-      ) {
-        state.activeConversation.messages.push({ ...systemMessage });
-        state.activeConversation.updatedAt = new Date().toISOString();
-      }
+      });
     },
     clearError: (state) => {
       state.error = null;
@@ -377,12 +447,10 @@ const aiSlice = createSlice({
     ) => {
       const { conversationId, messageId, content, tokenCount } = action.payload;
 
-      const updateMessage = (target?: AIConversation) => {
-        if (!target) return;
+      applyUpdateToConversation(state, conversationId, (target) => {
         let message = target.messages.find((m) => m.id === messageId);
 
         if (!message) {
-          // Create new streaming message if it doesn't exist
           message = {
             id: messageId,
             role: 'assistant',
@@ -395,23 +463,12 @@ const aiSlice = createSlice({
           };
           target.messages.push(message);
         } else {
-          // Update existing message
           message.content = content;
           message.tokenCount = tokenCount;
           message.isStreaming = true;
         }
         target.updatedAt = new Date().toISOString();
-      };
-
-      const conversation = state.conversations.find((c) => c.id === conversationId);
-      updateMessage(conversation);
-
-      if (
-        state.activeConversation?.id === conversationId &&
-        state.activeConversation !== conversation
-      ) {
-        updateMessage(state.activeConversation);
-      }
+      });
     },
     completeStreamingMessage: (
       state,
@@ -427,8 +484,7 @@ const aiSlice = createSlice({
       const { conversationId, messageId, content, status, tokenCount, errorDetails } =
         action.payload;
 
-      const updateMessage = (target?: AIConversation) => {
-        if (!target) return;
+      applyUpdateToConversation(state, conversationId, (target) => {
         let message = target.messages.find((m) => m.id === messageId);
 
         if (!message) {
@@ -454,34 +510,43 @@ const aiSlice = createSlice({
           }
         }
         target.updatedAt = new Date().toISOString();
-      };
-
-      const conversation = state.conversations.find((c) => c.id === conversationId);
-      updateMessage(conversation);
-
-      if (
-        state.activeConversation?.id === conversationId &&
-        state.activeConversation !== conversation
-      ) {
-        updateMessage(state.activeConversation);
-      }
+      });
     },
     clearStreamingState: (state, action: PayloadAction<{ conversationId: string }>) => {
       const { conversationId } = action.payload;
-      const conversation = state.conversations.find((c) => c.id === conversationId);
-
-      if (conversation) {
-        // Remove any pending streaming messages
+      applyUpdateToConversation(state, conversationId, (conversation) => {
         conversation.messages = conversation.messages.filter((m) => !m.isStreaming);
         conversation.updatedAt = new Date().toISOString();
+      });
+    },
+    clearConversationCache: (state) => {
+      state.conversations = [];
+      state.archivedConversations = [];
+      state.deletedConversations = [];
+      state.activeConversation = null;
+      state.cacheLastCleanup = Date.now();
+    },
+    cleanupConversationCache: (
+      state,
+      action: PayloadAction<{ olderThanDays?: number } | undefined>
+    ) => {
+      const thresholdDays = action.payload?.olderThanDays ?? DEFAULT_CACHE_MAX_AGE_DAYS;
+      const cutoff = Date.now() - thresholdDays * 24 * 60 * 60 * 1000;
+      const filterList = (list: AIConversation[]) =>
+        list.filter((conversation) => new Date(conversation.updatedAt).getTime() >= cutoff);
+
+      state.conversations = filterList(state.conversations);
+      state.archivedConversations = filterList(state.archivedConversations);
+      state.deletedConversations = filterList(state.deletedConversations);
+
+      if (
+        state.activeConversation &&
+        new Date(state.activeConversation.updatedAt).getTime() < cutoff
+      ) {
+        setActiveToFallbackConversation(state);
       }
 
-      if (state.activeConversation?.id === conversationId) {
-        state.activeConversation.messages = state.activeConversation.messages.filter(
-          (m) => !m.isStreaming
-        );
-        state.activeConversation.updatedAt = new Date().toISOString();
-      }
+      state.cacheLastCleanup = Date.now();
     },
   },
   extraReducers: (builder) => {
@@ -493,13 +558,9 @@ const aiSlice = createSlice({
       })
       .addCase(createConversation.fulfilled, (state, action) => {
         state.isLoading = false;
-        const normalizedConversation: AIConversation = {
-          ...action.payload,
-          messages: action.payload.messages?.map((message) => normalizeMessage(message)) ?? [],
-        };
+        const normalizedConversation = normalizeConversation(action.payload);
 
-        state.conversations = state.conversations.filter((c) => c.id !== normalizedConversation.id);
-        state.conversations.push(normalizedConversation);
+        upsertConversation(state, normalizedConversation);
         state.activeConversation = normalizedConversation;
         state.error = null;
       })
@@ -514,22 +575,31 @@ const aiSlice = createSlice({
       })
       .addCase(fetchConversations.fulfilled, (state, action) => {
         state.isLoading = false;
-        const normalizedConversations = action.payload.map((conversation) => ({
-          ...conversation,
-          messages: conversation.messages?.map((message) => normalizeMessage(message)) ?? [],
-        }));
+        const { status, conversations } = action.payload;
+        const normalizedConversations = conversations.map((conversation) =>
+          normalizeConversation(conversation)
+        );
+        sortByUpdatedAtDesc(normalizedConversations);
 
-        state.conversations = normalizedConversations;
-
-        if (normalizedConversations.length === 0) {
-          state.activeConversation = null;
-        } else if (state.activeConversation) {
-          const updatedActive = normalizedConversations.find(
-            (conversation) => conversation.id === state.activeConversation?.id
-          );
-          state.activeConversation = updatedActive ?? normalizedConversations[0];
+        if (status === 'archived') {
+          state.archivedConversations = normalizedConversations;
+        } else if (status === 'deleted') {
+          state.deletedConversations = normalizedConversations;
         } else {
-          state.activeConversation = normalizedConversations[0];
+          state.conversations = normalizedConversations;
+
+          if (!state.activeConversation || state.activeConversation.status === 'active') {
+            if (normalizedConversations.length === 0) {
+              state.activeConversation = null;
+            } else if (state.activeConversation) {
+              const updatedActive = normalizedConversations.find(
+                (conversation) => conversation.id === state.activeConversation?.id
+              );
+              state.activeConversation = updatedActive ?? normalizedConversations[0];
+            } else {
+              state.activeConversation = normalizedConversations[0];
+            }
+          }
         }
 
         state.error = null;
@@ -545,26 +615,10 @@ const aiSlice = createSlice({
       })
       .addCase(fetchConversation.fulfilled, (state, action) => {
         state.isLoading = false;
-        const normalizedConversation = {
-          ...action.payload,
-          messages: action.payload.messages?.map((message) => normalizeMessage(message)) ?? [],
-        };
+        const normalizedConversation = normalizeConversation(action.payload);
 
-        // Update or add conversation in list
-        const index = state.conversations.findIndex((c) => c.id === normalizedConversation.id);
-        if (index !== -1) {
-          state.conversations[index] = normalizedConversation;
-        } else {
-          state.conversations.push(normalizedConversation);
-        }
-
-        // Set as active if not already set or if it's the same conversation
-        if (
-          !state.activeConversation ||
-          state.activeConversation.id === normalizedConversation.id
-        ) {
-          state.activeConversation = normalizedConversation;
-        }
+        upsertConversation(state, normalizedConversation);
+        state.activeConversation = normalizedConversation;
 
         state.error = null;
       })
@@ -585,25 +639,12 @@ const aiSlice = createSlice({
         const normalizedUserMessage = normalizeMessage(userMessage);
         const normalizedAssistantMessage = normalizeMessage(assistantMessage);
 
-        const updateConversation = (target?: AIConversation) => {
-          if (!target) return;
-          // Remove temporary messages
+        applyUpdateToConversation(state, conversationId, (target) => {
           target.messages = target.messages.filter((m) => !m.id.startsWith('temp-'));
-          // Add both user and assistant messages
           target.messages.push({ ...normalizedUserMessage });
           target.messages.push({ ...normalizedAssistantMessage });
           target.updatedAt = new Date().toISOString();
-        };
-
-        const conversation = state.conversations.find((c) => c.id === conversationId);
-        updateConversation(conversation);
-
-        if (
-          state.activeConversation?.id === conversationId &&
-          state.activeConversation !== conversation
-        ) {
-          updateConversation(state.activeConversation);
-        }
+        });
       })
       .addCase(sendMessage.rejected, (state, action) => {
         state.isSubmitting = false;
@@ -630,22 +671,11 @@ const aiSlice = createSlice({
           feedback: null,
         });
 
-        const updateConversation = (target?: AIConversation) => {
-          if (!target) return;
+        applyUpdateToConversation(state, conversationId, (target) => {
           target.messages = target.messages.filter((m) => !m.id.startsWith('temp-'));
           target.messages.push({ ...systemMessage });
           target.updatedAt = new Date().toISOString();
-        };
-
-        const conversation = state.conversations.find((c) => c.id === conversationId);
-        updateConversation(conversation);
-
-        if (
-          state.activeConversation?.id === conversationId &&
-          state.activeConversation !== conversation
-        ) {
-          updateConversation(state.activeConversation);
-        }
+        });
       })
       // Retry Last Message
       .addCase(retryLastMessage.pending, (state) => {
@@ -689,24 +719,46 @@ const aiSlice = createSlice({
       })
       // Rename Conversation
       .addCase(renameConversation.fulfilled, (state, action) => {
-        const conversation = state.conversations.find((c) => c.id === action.payload.id);
-        if (conversation) {
-          conversation.title = action.payload.title;
-          conversation.updatedAt = action.payload.updatedAt;
-        }
-        if (state.activeConversation?.id === action.payload.id) {
-          state.activeConversation.title = action.payload.title;
-          state.activeConversation.updatedAt = action.payload.updatedAt;
-        }
+        const normalizedConversation = normalizeConversation(action.payload);
+        upsertConversation(state, normalizedConversation);
       })
       .addCase(renameConversation.rejected, (state, action) => {
         state.error = action.error.message || 'Failed to rename conversation';
       })
+      .addCase(updateConversationStatus.fulfilled, (state, action) => {
+        const normalizedConversation = normalizeConversation(action.payload);
+        const wasActive =
+          state.activeConversation?.id === normalizedConversation.id &&
+          state.activeConversation.status === 'active';
+
+        upsertConversation(state, normalizedConversation);
+
+        if (wasActive && normalizedConversation.status !== 'active') {
+          setActiveToFallbackConversation(state);
+        }
+      })
+      .addCase(updateConversationStatus.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to update conversation status';
+      })
       // Delete Conversation
       .addCase(deleteConversation.fulfilled, (state, action) => {
-        state.conversations = state.conversations.filter((c) => c.id !== action.payload);
-        if (state.activeConversation?.id === action.payload) {
-          state.activeConversation = state.conversations[0] || null;
+        if (action.payload.type === 'hard') {
+          removeConversationFromLists(state, action.payload.conversationId);
+          if (state.activeConversation?.id === action.payload.conversationId) {
+            setActiveToFallbackConversation(state);
+          }
+          return;
+        }
+
+        const normalizedConversation = normalizeConversation(action.payload.conversation);
+        const wasActive =
+          state.activeConversation?.id === normalizedConversation.id &&
+          state.activeConversation.status === 'active';
+
+        upsertConversation(state, normalizedConversation);
+
+        if (wasActive && normalizedConversation.status !== 'active') {
+          setActiveToFallbackConversation(state);
         }
       })
       .addCase(deleteConversation.rejected, (state, action) => {
@@ -714,15 +766,8 @@ const aiSlice = createSlice({
       })
       // Toggle Favorite Conversation
       .addCase(toggleFavoriteConversation.fulfilled, (state, action) => {
-        const conversation = state.conversations.find((c) => c.id === action.payload.id);
-        if (conversation) {
-          conversation.isFavorite = action.payload.isFavorite;
-          conversation.updatedAt = action.payload.updatedAt;
-        }
-        if (state.activeConversation?.id === action.payload.id) {
-          state.activeConversation.isFavorite = action.payload.isFavorite;
-          state.activeConversation.updatedAt = action.payload.updatedAt;
-        }
+        const normalizedConversation = normalizeConversation(action.payload);
+        upsertConversation(state, normalizedConversation);
       })
       .addCase(toggleFavoriteConversation.rejected, (state, action) => {
         state.error = action.error.message || 'Failed to toggle favorite';
@@ -740,6 +785,8 @@ export const {
   updateStreamingMessage,
   completeStreamingMessage,
   clearStreamingState,
+  clearConversationCache,
+  cleanupConversationCache,
 } = aiSlice.actions;
 
 export default aiSlice.reducer;
