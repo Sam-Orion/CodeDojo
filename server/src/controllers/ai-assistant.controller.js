@@ -432,6 +432,143 @@ const submitSuggestionTelemetry = asyncHandler(async (req, res) => {
   res.json({ success: true });
 });
 
+/**
+ * Create a new conversation
+ * @route POST /api/v1/ai/conversations
+ */
+const createConversation = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'User not authenticated',
+    });
+  }
+
+  const conversation = {
+    id: `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    messages: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    title: undefined,
+    isFavorite: false,
+  };
+
+  logger.info('Conversation created', { userId, conversationId: conversation.id });
+
+  res.json({
+    success: true,
+    data: conversation,
+  });
+});
+
+/**
+ * Get all conversations for user
+ * @route GET /api/v1/ai/conversations
+ */
+const getConversations = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'User not authenticated',
+    });
+  }
+
+  // For now, return empty array. This would be persisted to a database in production.
+  const conversations = [];
+
+  res.json({
+    success: true,
+    data: conversations,
+  });
+});
+
+/**
+ * Update conversation (rename, favorite)
+ * @route PATCH /api/v1/ai/conversations/:conversationId
+ */
+const updateConversation = asyncHandler(async (req, res) => {
+  const { conversationId } = req.params;
+  const { title, isFavorite } = req.body;
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'User not authenticated',
+    });
+  }
+
+  if (!conversationId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Conversation ID is required',
+    });
+  }
+
+  // Validate input
+  if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
+    return res.status(400).json({
+      success: false,
+      error: 'Title must be a non-empty string',
+    });
+  }
+
+  const updatedConversation = {
+    id: conversationId,
+    messages: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    title: title || undefined,
+    isFavorite: Boolean(isFavorite),
+  };
+
+  logger.info('Conversation updated', {
+    userId,
+    conversationId,
+    title,
+    isFavorite,
+  });
+
+  res.json({
+    success: true,
+    data: updatedConversation,
+  });
+});
+
+/**
+ * Delete a conversation
+ * @route DELETE /api/v1/ai/conversations/:conversationId
+ */
+const deleteConversation = asyncHandler(async (req, res) => {
+  const { conversationId } = req.params;
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'User not authenticated',
+    });
+  }
+
+  if (!conversationId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Conversation ID is required',
+    });
+  }
+
+  logger.info('Conversation deleted', { userId, conversationId });
+
+  res.json({
+    success: true,
+    data: { id: conversationId },
+  });
+});
+
 module.exports = {
   streamCompletion,
   explainCode,
@@ -444,4 +581,8 @@ module.exports = {
   streamMessage,
   getCodeSuggestions,
   submitSuggestionTelemetry,
+  createConversation,
+  getConversations,
+  updateConversation,
+  deleteConversation,
 };

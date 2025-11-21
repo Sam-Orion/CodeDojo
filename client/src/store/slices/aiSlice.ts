@@ -167,6 +167,58 @@ export const explainCode = createAsyncThunk(
   }
 );
 
+export const renameConversation = createAsyncThunk(
+  'ai/renameConversation',
+  async ({ conversationId, title }: { conversationId: string; title: string }) => {
+    const response = await fetch(`/api/v1/ai/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    const data: ApiResponse<AIConversation> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error || 'Failed to rename conversation');
+    }
+
+    return data.data;
+  }
+);
+
+export const deleteConversation = createAsyncThunk(
+  'ai/deleteConversation',
+  async (conversationId: string) => {
+    const response = await fetch(`/api/v1/ai/conversations/${conversationId}`, {
+      method: 'DELETE',
+    });
+    const data: ApiResponse<{ id: string }> = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to delete conversation');
+    }
+
+    return conversationId;
+  }
+);
+
+export const toggleFavoriteConversation = createAsyncThunk(
+  'ai/toggleFavoriteConversation',
+  async ({ conversationId, isFavorite }: { conversationId: string; isFavorite: boolean }) => {
+    const response = await fetch(`/api/v1/ai/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isFavorite }),
+    });
+    const data: ApiResponse<AIConversation> = await response.json();
+
+    if (!data.success || !data.data) {
+      throw new Error(data.error || 'Failed to toggle favorite');
+    }
+
+    return data.data;
+  }
+);
+
 const normalizeMessage = (message: AIMessage): AIMessage => ({
   ...message,
   timestamp: message.timestamp ?? Date.now(),
@@ -586,6 +638,46 @@ const aiSlice = createSlice({
       .addCase(explainCode.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.error.message || 'Failed to explain code';
+      })
+      // Rename Conversation
+      .addCase(renameConversation.fulfilled, (state, action) => {
+        const conversation = state.conversations.find((c) => c.id === action.payload.id);
+        if (conversation) {
+          conversation.title = action.payload.title;
+          conversation.updatedAt = action.payload.updatedAt;
+        }
+        if (state.activeConversation?.id === action.payload.id) {
+          state.activeConversation.title = action.payload.title;
+          state.activeConversation.updatedAt = action.payload.updatedAt;
+        }
+      })
+      .addCase(renameConversation.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to rename conversation';
+      })
+      // Delete Conversation
+      .addCase(deleteConversation.fulfilled, (state, action) => {
+        state.conversations = state.conversations.filter((c) => c.id !== action.payload);
+        if (state.activeConversation?.id === action.payload) {
+          state.activeConversation = state.conversations[0] || null;
+        }
+      })
+      .addCase(deleteConversation.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to delete conversation';
+      })
+      // Toggle Favorite Conversation
+      .addCase(toggleFavoriteConversation.fulfilled, (state, action) => {
+        const conversation = state.conversations.find((c) => c.id === action.payload.id);
+        if (conversation) {
+          conversation.isFavorite = action.payload.isFavorite;
+          conversation.updatedAt = action.payload.updatedAt;
+        }
+        if (state.activeConversation?.id === action.payload.id) {
+          state.activeConversation.isFavorite = action.payload.isFavorite;
+          state.activeConversation.updatedAt = action.payload.updatedAt;
+        }
+      })
+      .addCase(toggleFavoriteConversation.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to toggle favorite';
       });
   },
 });
