@@ -85,10 +85,13 @@ export const RootStateSchema = z.object({
   }),
   ai: z.object({
     conversations: z.array(z.any()),
+    archivedConversations: z.array(z.any()),
+    deletedConversations: z.array(z.any()),
     activeConversation: z.any().nullable(),
     isLoading: z.boolean(),
     isSubmitting: z.boolean(),
     error: z.string().nullable(),
+    cacheLastCleanup: z.number().nullable(),
   }),
   storageProvider: z.object({
     providers: z.array(z.any()),

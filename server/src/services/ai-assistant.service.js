@@ -74,6 +74,10 @@ class AIAssistantService {
         title: null,
         messages: [],
         isFavorite: false,
+        status: 'active',
+        archivedAt: null,
+        deletedAt: null,
+        deletedBy: null,
         metadata: {},
       });
     }

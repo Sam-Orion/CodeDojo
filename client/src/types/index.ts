@@ -144,6 +144,8 @@ export interface TerminalState {
 }
 
 // AI Assistant types
+export type ConversationStatus = 'active' | 'archived' | 'deleted';
+
 export interface AIConversation {
   id: string;
   messages: AIMessage[];
@@ -151,6 +153,10 @@ export interface AIConversation {
   updatedAt: string;
   title?: string;
   isFavorite?: boolean;
+  status: ConversationStatus;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
 }
 
 export type AIMessageRole = 'user' | 'assistant' | 'system';
@@ -175,10 +181,13 @@ export interface AIMessage {
 
 export interface AIState {
   conversations: AIConversation[];
+  archivedConversations: AIConversation[];
+  deletedConversations: AIConversation[];
   activeConversation: AIConversation | null;
   isLoading: boolean;
   isSubmitting: boolean;
   error: string | null;
+  cacheLastCleanup: number | null;
 }
 
 // API Response types

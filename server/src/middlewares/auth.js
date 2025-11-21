@@ -7,7 +7,8 @@ const authenticate = asyncHandler(async (req, res, next) => {
   // For development, allow requests with userId in body or headers
   if (config.NODE_ENV === 'development') {
     const userId = req.body.userId || req.headers['x-user-id'] || 'dev-user';
-    req.user = { id: userId };
+    const role = req.body.role || req.headers['x-user-role'] || 'user';
+    req.user = { id: userId, role };
     return next();
   }
 
@@ -21,7 +22,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, config.JWT_SECRET);
-    req.user = decoded;
+    req.user = { ...decoded, role: decoded.role || 'user' };
     next();
   } catch (error) {
     throw new AppError('Invalid or expired token', 401);

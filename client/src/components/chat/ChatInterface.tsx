@@ -8,6 +8,7 @@ import {
   removeMessage,
   sendMessage,
   setMessageFeedback,
+  cleanupConversationCache,
 } from '../../store/slices/aiSlice';
 import { addToast } from '../../store/slices/toastSlice';
 import { useStreamingMessages, useOfflineMessageQueue } from '../../hooks';
@@ -245,6 +246,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
     (state) => state.ai
   );
   const messages = activeConversation?.messages ?? [];
+  const isConversationReadOnly = Boolean(
+    activeConversation && activeConversation.status && activeConversation.status !== 'active'
+  );
 
   const { startStream, stopStream, isStreaming, tokenCount } = useStreamingMessages();
 
@@ -272,6 +276,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
   useEffect(() => {
     if (!hasFetchedRef.current) {
       hasFetchedRef.current = true;
+      dispatch(cleanupConversationCache(undefined));
       dispatch(fetchConversations());
     }
   }, [dispatch]);
@@ -435,6 +440,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
         return;
       }
 
+      if (activeConversation.status !== 'active') {
+        dispatch(
+          addToast({
+            message:
+              activeConversation.status === 'archived'
+                ? 'Unarchive this conversation from the sidebar to continue chatting.'
+                : 'Restore this conversation from the trash before sending new messages.',
+            type: 'warning',
+            duration: 4000,
+          })
+        );
+        return;
+      }
+
       // If offline, queue the message
       if (!isOnline) {
         try {
@@ -551,6 +570,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
             </Button>
           </div>
         </header>
+
+        {activeConversation && activeConversation.status !== 'active' && (
+          <div className="mx-4 mt-3 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+            <WarningIcon className="h-5 w-5 flex-shrink-0" />
+            <div className="space-y-1">
+              <p className="font-semibold">
+                {activeConversation.status === 'archived'
+                  ? 'Conversation archived'
+                  : 'Conversation in trash'}
+              </p>
+              <p>
+                {activeConversation.status === 'archived'
+                  ? 'Unarchive this conversation from the sidebar to resume chatting.'
+                  : 'Restore this conversation from the Deleted tab to send messages again.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {activeConversation && (
           <div className="px-4 pt-4">
@@ -815,17 +852,25 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
             onSubmit={handleSendMessage}
             isLoading={isSubmitting || isStreaming}
             disabled={
-              !activeConversation || isSubmitting || isStreaming || (!isOnline && queueFull)
+              !activeConversation ||
+              isSubmitting ||
+              isStreaming ||
+              (!isOnline && queueFull) ||
+              isConversationReadOnly
             }
             initialValue={initialMessage}
             placeholder={
-              !isOnline
-                ? queueFull
-                  ? 'Queue full. Clear queue to send messages...'
-                  : 'Offline. Messages will be queued...'
-                : queueFull
-                  ? 'Queue full. Clear queue to send more messages...'
-                  : 'Type your message... (Shift+Enter for newline)'
+              isConversationReadOnly
+                ? activeConversation?.status === 'archived'
+                  ? 'This conversation is archived. Unarchive it from the sidebar to continue.'
+                  : 'This conversation is in the trash. Restore it to send new messages.'
+                : !isOnline
+                  ? queueFull
+                    ? 'Queue full. Clear queue to send messages...'
+                    : 'Offline. Messages will be queued...'
+                  : queueFull
+                    ? 'Queue full. Clear queue to send more messages...'
+                    : 'Type your message... (Shift+Enter for newline)'
             }
           />
         </footer>

@@ -456,6 +456,10 @@ const createConversation = asyncHandler(async (req, res) => {
     title: title || null,
     messages: [],
     isFavorite: false,
+    status: 'active',
+    archivedAt: null,
+    deletedAt: null,
+    deletedBy: null,
     metadata: {},
   });
 
@@ -483,13 +487,44 @@ const getConversations = asyncHandler(async (req, res) => {
     });
   }
 
-  const { limit, skip, sortBy, sortOrder } = req.query;
+  const { limit, skip, sortBy, sortOrder, status } = req.query;
+  const allowedStatuses = ['active', 'archived', 'deleted'];
+
+  const normalizeStatuses = (rawStatus) => {
+    if (!rawStatus) {
+      return ['active'];
+    }
+
+    const values = Array.isArray(rawStatus) ? rawStatus : String(rawStatus).split(',');
+    const normalized = values
+      .map((value) => value.trim().toLowerCase())
+      .map((value) => (value === 'trash' ? 'deleted' : value))
+      .filter((value) => allowedStatuses.includes(value) || value === 'all');
+
+    if (normalized.includes('all')) {
+      return allowedStatuses;
+    }
+
+    return normalized.length > 0 ? normalized : ['active'];
+  };
+
+  const normalizedStatuses = normalizeStatuses(status);
+  let statusFilter = 'active';
+
+  if (normalizedStatuses.length === allowedStatuses.length) {
+    statusFilter = 'all';
+  } else if (normalizedStatuses.length === 1) {
+    statusFilter = normalizedStatuses[0];
+  } else {
+    statusFilter = normalizedStatuses;
+  }
 
   const conversations = await AIConversation.findByUser(userId, {
-    limit: limit ? parseInt(limit) : 50,
-    skip: skip ? parseInt(skip) : 0,
+    limit: limit ? parseInt(limit, 10) : 50,
+    skip: skip ? parseInt(skip, 10) : 0,
     sortBy: sortBy || 'updatedAt',
-    sortOrder: sortOrder ? parseInt(sortOrder) : -1,
+    sortOrder: sortOrder ? parseInt(sortOrder, 10) : -1,
+    status: statusFilter,
   });
 
   res.json({
@@ -541,7 +576,7 @@ const getConversation = asyncHandler(async (req, res) => {
  */
 const updateConversation = asyncHandler(async (req, res) => {
   const { conversationId } = req.params;
-  const { title, isFavorite } = req.body;
+  const { title, isFavorite, status: nextStatus } = req.body;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -575,6 +610,33 @@ const updateConversation = asyncHandler(async (req, res) => {
     });
   }
 
+  if (nextStatus !== undefined) {
+    const allowedStatuses = ['active', 'archived'];
+    if (!allowedStatuses.includes(nextStatus)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid conversation status. Allowed values are active or archived.',
+      });
+    }
+
+    if (conversation.status === 'deleted' && nextStatus === 'archived') {
+      return res.status(400).json({
+        success: false,
+        error: 'Deleted conversations must be restored before they can be archived.',
+      });
+    }
+
+    if (nextStatus === 'archived') {
+      conversation.status = 'archived';
+      conversation.archivedAt = new Date();
+    } else if (nextStatus === 'active') {
+      conversation.status = 'active';
+      conversation.archivedAt = null;
+      conversation.deletedAt = null;
+      conversation.deletedBy = null;
+    }
+  }
+
   // Update fields
   if (title !== undefined) {
     conversation.title = title.trim();
@@ -591,6 +653,7 @@ const updateConversation = asyncHandler(async (req, res) => {
     conversationId,
     title,
     isFavorite,
+    status: nextStatus,
   });
 
   res.json({
@@ -606,6 +669,8 @@ const updateConversation = asyncHandler(async (req, res) => {
 const deleteConversation = asyncHandler(async (req, res) => {
   const { conversationId } = req.params;
   const userId = req.user?.id;
+  const forceDelete =
+    req.query.force === 'true' || req.query.force === '1' || req.body?.force === true;
 
   if (!userId) {
     return res.status(401).json({
@@ -630,13 +695,42 @@ const deleteConversation = asyncHandler(async (req, res) => {
     });
   }
 
-  await AIConversation.deleteOne({ conversationId, userId });
+  if (forceDelete) {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only administrators can permanently delete conversations',
+      });
+    }
 
-  logger.info('Conversation deleted', { userId, conversationId });
+    await AIConversation.deleteOne({ conversationId, userId });
+    logger.info('Conversation hard deleted', { userId, conversationId });
+
+    return res.json({
+      success: true,
+      data: { id: conversationId, hardDeleted: true },
+    });
+  }
+
+  if (conversation.status === 'deleted') {
+    return res.json({
+      success: true,
+      data: conversation.toJSON(),
+    });
+  }
+
+  conversation.status = 'deleted';
+  conversation.deletedAt = new Date();
+  conversation.deletedBy = userId;
+  conversation.archivedAt = null;
+  conversation.updatedAt = new Date();
+  await conversation.save();
+
+  logger.info('Conversation soft deleted', { userId, conversationId });
 
   res.json({
     success: true,
-    data: { id: conversationId },
+    data: conversation.toJSON(),
   });
 });
 
