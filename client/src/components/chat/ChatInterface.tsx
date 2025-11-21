@@ -9,12 +9,21 @@ import {
   sendMessage,
   setMessageFeedback,
 } from '../../store/slices/aiSlice';
+import { addToast } from '../../store/slices/toastSlice';
 import { useStreamingMessages, useOfflineMessageQueue } from '../../hooks';
 import type { AIMessage } from '../../types';
+import {
+  buildConversationFilename,
+  buildConversationJson,
+  buildConversationMarkdown,
+  ConversationExportFormat,
+  triggerFileDownload,
+} from '../../utils/conversationExport';
 import Button from '../ui/Button';
 import MarkdownRenderer from './MarkdownRenderer';
 import ChatInput from './ChatInput';
 import OfflineQueueIndicator from './OfflineQueueIndicator';
+import ConversationExportModal from './ConversationExportModal';
 
 const cn = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(' ');
@@ -62,6 +71,14 @@ const TrashIcon = (props: SVGProps<SVGSVGElement>) => (
     <path d="M18 6v12.5A1.5 1.5 0 0 1 16.5 20h-9A1.5 1.5 0 0 1 6 18.5V6" />
     <path d="M10 10v6" strokeLinecap="round" />
     <path d="M14 10v6" strokeLinecap="round" />
+  </svg>
+);
+
+const DownloadIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.6} stroke="currentColor" {...props}>
+    <path d="M12 4v11" strokeLinecap="round" />
+    <path d="m7.5 10.5 4.5 4.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M5 20h14" strokeLinecap="round" />
   </svg>
 );
 
@@ -248,6 +265,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
 
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (!hasFetchedRef.current) {
@@ -444,295 +463,373 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ initialMessage }) => {
     [activeConversation, isSubmitting, isStreaming, isOnline, dispatch, startStream, queueMessage]
   );
 
+  const handleExportConversation = useCallback(
+    async (format: ConversationExportFormat) => {
+      if (!activeConversation) {
+        dispatch(
+          addToast({
+            message: 'Conversation is not ready to export yet.',
+            type: 'warning',
+            duration: 4000,
+          })
+        );
+        return;
+      }
+
+      setIsExporting(true);
+
+      try {
+        const filename = buildConversationFilename(activeConversation, format);
+        const content =
+          format === 'json'
+            ? await buildConversationJson(activeConversation)
+            : await buildConversationMarkdown(activeConversation);
+        const mimeType =
+          format === 'json' ? 'application/json;charset=utf-8' : 'text/markdown;charset=utf-8';
+
+        triggerFileDownload(content, filename, mimeType);
+        setIsExportModalOpen(false);
+        dispatch(
+          addToast({
+            message: `Conversation exported as ${format === 'json' ? 'JSON' : 'Markdown'}.`,
+            type: 'success',
+            duration: 4000,
+          })
+        );
+      } catch (exportError) {
+        console.error('Failed to export conversation:', exportError);
+        dispatch(
+          addToast({
+            message: 'Failed to export conversation. Please try again.',
+            type: 'error',
+            duration: 5000,
+          })
+        );
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [activeConversation, dispatch]
+  );
+
+  const handleCloseExportModal = useCallback(() => {
+    setIsExportModalOpen(false);
+  }, []);
+
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
-      <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-        <div className="flex flex-col">
-          <span className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-            <SparklesIcon className="h-5 w-5 text-primary-500" />
-            AI Assistant
-          </span>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {activeConversation
-              ? 'Chat with context-aware AI assistance.'
-              : 'Preparing your conversation...'}
-          </span>
-        </div>
-        <div className="text-xs text-gray-400 dark:text-gray-500">
-          {messages.length} message{messages.length === 1 ? '' : 's'}
-        </div>
-      </header>
+    <>
+      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
+        <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+          <div className="flex flex-col">
+            <span className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+              <SparklesIcon className="h-5 w-5 text-primary-500" />
+              AI Assistant
+            </span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {activeConversation
+                ? 'Chat with context-aware AI assistance.'
+                : 'Preparing your conversation...'}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              {messages.length} message{messages.length === 1 ? '' : 's'}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+              onClick={() => setIsExportModalOpen(true)}
+              disabled={!activeConversation || isLoading || isExporting}
+              aria-label="Export conversation"
+              title="Export conversation"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              Export
+            </Button>
+          </div>
+        </header>
 
-      <div className="px-4 py-2">
-        <OfflineQueueIndicator
-          isOnline={isOnline}
-          queueSize={queueSize}
-          isRetrying={isRetrying}
-          retryProgress={retryProgress}
-          queueFull={queueFull}
-          maxQueueSize={maxQueueSize}
-          onRetryNow={retryNow}
-          onClearQueue={clearQueue}
-        />
-      </div>
+        <div className="px-4 py-2">
+          <OfflineQueueIndicator
+            isOnline={isOnline}
+            queueSize={queueSize}
+            isRetrying={isRetrying}
+            retryProgress={retryProgress}
+            queueFull={queueFull}
+            maxQueueSize={maxQueueSize}
+            onRetryNow={retryNow}
+            onClearQueue={clearQueue}
+          />
+        </div>
 
-      {error && (
-        <div className="border-b border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-3">
-              <WarningIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500 dark:text-red-300" />
-              <div className="space-y-1">
-                <p className="font-semibold">Something went wrong</p>
-                <p>{error}</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
-                  <li>Check your network connection and try again.</li>
-                  <li>Retry sending the message or regenerate the response.</li>
-                  <li>Contact an administrator if the problem persists.</li>
-                </ul>
+        {error && (
+          <div className="border-b border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <WarningIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500 dark:text-red-300" />
+                <div className="space-y-1">
+                  <p className="font-semibold">Something went wrong</p>
+                  <p>{error}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                    <li>Check your network connection and try again.</li>
+                    <li>Retry sending the message or regenerate the response.</li>
+                    <li>Contact an administrator if the problem persists.</li>
+                  </ul>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="primary" onClick={handleRetry}>
+                  Retry
+                </Button>
+                <Button size="sm" variant="ghost" onClick={handleDismissError}>
+                  Dismiss
+                </Button>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="primary" onClick={handleRetry}>
-                Retry
-              </Button>
-              <Button size="sm" variant="ghost" onClick={handleDismissError}>
-                Dismiss
-              </Button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 space-y-6 overflow-y-auto px-4 py-6"
-        aria-live="polite"
-        aria-busy={isLoading || isStreaming}
-      >
-        {messages.length === 0 && !isLoading ? (
-          <EmptyState />
-        ) : (
-          messages.map((message: AIMessage) => {
-            const isUser = message.role === 'user';
-            const isAssistant = message.role === 'assistant';
-            const isSystem = message.role === 'system';
-            const metadataLabel = getSenderLabel(message);
-            const timestamp = formatTimestamp(message.timestamp);
-            const isCopied = copiedMessageId === message.id;
-            const isRegenerating = regeneratingMessageId === message.id;
-            const tokenBadge =
-              typeof message.tokenCount === 'number'
-                ? `${message.tokenCount.toLocaleString()} token${message.tokenCount === 1 ? '' : 's'}`
-                : null;
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 space-y-6 overflow-y-auto px-4 py-6"
+          aria-live="polite"
+          aria-busy={isLoading || isStreaming}
+        >
+          {messages.length === 0 && !isLoading ? (
+            <EmptyState />
+          ) : (
+            messages.map((message: AIMessage) => {
+              const isUser = message.role === 'user';
+              const isAssistant = message.role === 'assistant';
+              const isSystem = message.role === 'system';
+              const metadataLabel = getSenderLabel(message);
+              const timestamp = formatTimestamp(message.timestamp);
+              const isCopied = copiedMessageId === message.id;
+              const isRegenerating = regeneratingMessageId === message.id;
+              const tokenBadge =
+                typeof message.tokenCount === 'number'
+                  ? `${message.tokenCount.toLocaleString()} token${message.tokenCount === 1 ? '' : 's'}`
+                  : null;
 
-            const bubbleClasses = cn(
-              'w-full rounded-2xl border px-4 py-3 text-sm leading-relaxed shadow-sm transition-all',
-              isUser &&
-                'border-primary-600 bg-primary-600 text-white shadow-primary-600/20 dark:border-primary-500 dark:bg-primary-500',
-              isAssistant &&
-                'border-gray-200 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100',
-              isSystem &&
-                (message.status === 'error'
-                  ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-500/50 dark:bg-red-500/10 dark:text-red-100'
-                  : 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-100'),
-              message.status === 'pending' &&
-                'border-dashed border-primary-300 bg-primary-50/60 text-primary-900 dark:border-primary-500/60 dark:bg-primary-500/10 dark:text-primary-100'
-            );
+              const bubbleClasses = cn(
+                'w-full rounded-2xl border px-4 py-3 text-sm leading-relaxed shadow-sm transition-all',
+                isUser &&
+                  'border-primary-600 bg-primary-600 text-white shadow-primary-600/20 dark:border-primary-500 dark:bg-primary-500',
+                isAssistant &&
+                  'border-gray-200 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100',
+                isSystem &&
+                  (message.status === 'error'
+                    ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-500/50 dark:bg-red-500/10 dark:text-red-100'
+                    : 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-100'),
+                message.status === 'pending' &&
+                  'border-dashed border-primary-300 bg-primary-50/60 text-primary-900 dark:border-primary-500/60 dark:bg-primary-500/10 dark:text-primary-100'
+              );
 
-            return (
-              <div
-                key={message.id}
-                className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
-              >
+              return (
                 <div
-                  className={cn(
-                    'flex max-w-[92%] flex-col gap-2 md:max-w-[80%]',
-                    isUser ? 'items-end text-right' : 'items-start text-left'
-                  )}
+                  key={message.id}
+                  className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}
                 >
                   <div
                     className={cn(
-                      'flex flex-wrap items-center gap-2 text-xs',
-                      isUser
-                        ? 'justify-end text-primary-100/90'
-                        : 'justify-start text-gray-500 dark:text-gray-400'
+                      'flex max-w-[92%] flex-col gap-2 md:max-w-[80%]',
+                      isUser ? 'items-end text-right' : 'items-start text-left'
                     )}
                   >
-                    <span
+                    <div
                       className={cn(
-                        'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-                        isUser && 'bg-primary-600/80 text-white',
-                        isAssistant &&
-                          'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200',
-                        isSystem &&
-                          (message.status === 'error'
-                            ? 'bg-red-500/20 text-red-900 dark:bg-red-500/30 dark:text-red-100'
-                            : 'bg-blue-500/10 text-blue-900 dark:bg-blue-500/20 dark:text-blue-100')
+                        'flex flex-wrap items-center gap-2 text-xs',
+                        isUser
+                          ? 'justify-end text-primary-100/90'
+                          : 'justify-start text-gray-500 dark:text-gray-400'
                       )}
                     >
-                      {metadataLabel}
-                    </span>
-                    {timestamp && <span>{timestamp}</span>}
-                    {message.model && !isUser && (
-                      <span className="rounded-full border border-primary-200/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-primary-600 dark:border-primary-500/30 dark:text-primary-300">
-                        {message.model}
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                          isUser && 'bg-primary-600/80 text-white',
+                          isAssistant &&
+                            'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200',
+                          isSystem &&
+                            (message.status === 'error'
+                              ? 'bg-red-500/20 text-red-900 dark:bg-red-500/30 dark:text-red-100'
+                              : 'bg-blue-500/10 text-blue-900 dark:bg-blue-500/20 dark:text-blue-100')
+                        )}
+                      >
+                        {metadataLabel}
                       </span>
-                    )}
-                    {tokenBadge && (
-                      <span className="rounded-full border border-gray-200 px-2 py-0.5 text-[10px] tracking-wide text-gray-600 dark:border-gray-600 dark:text-gray-300">
-                        {tokenBadge}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className={bubbleClasses}>
-                    {isAssistant || isSystem ? (
-                      <MarkdownRenderer content={message.content} />
-                    ) : (
-                      <p className="whitespace-pre-wrap text-sm text-white/95 dark:text-white">
-                        {message.content}
-                      </p>
-                    )}
-
-                    {message.isStreaming && (
-                      <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                        <SpinnerIcon className="h-3 w-3" />
-                        <span>Streaming...</span>
-                      </div>
-                    )}
-
-                    {isSystem && message.status === 'error' && (
-                      <div className="mt-3 flex items-start gap-2 text-sm">
-                        <WarningIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500 dark:text-red-300" />
-                        <span>An error occurred while generating the response.</span>
-                      </div>
-                    )}
-
-                    {isSystem && message.status === 'info' && (
-                      <div className="mt-3 flex items-start gap-2 text-sm text-blue-900 dark:text-blue-100">
-                        <InfoIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                        <span>This is a system update for your conversation.</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {message.suggestions && message.suggestions.length > 0 && (
-                    <div className="w-full rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-left text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-                      <p className="font-semibold">Actionable suggestions</p>
-                      <ul className="mt-2 list-disc space-y-1 pl-5">
-                        {message.suggestions.map((suggestion: string) => (
-                          <li key={suggestion}>{suggestion}</li>
-                        ))}
-                      </ul>
+                      {timestamp && <span>{timestamp}</span>}
+                      {message.model && !isUser && (
+                        <span className="rounded-full border border-primary-200/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-primary-600 dark:border-primary-500/30 dark:text-primary-300">
+                          {message.model}
+                        </span>
+                      )}
+                      {tokenBadge && (
+                        <span className="rounded-full border border-gray-200 px-2 py-0.5 text-[10px] tracking-wide text-gray-600 dark:border-gray-600 dark:text-gray-300">
+                          {tokenBadge}
+                        </span>
+                      )}
                     </div>
-                  )}
 
-                  <div
-                    className={cn(
-                      'flex flex-wrap items-center gap-2 text-xs',
-                      isUser
-                        ? 'justify-end text-white/80'
-                        : 'justify-start text-gray-500 dark:text-gray-400'
+                    <div className={bubbleClasses}>
+                      {isAssistant || isSystem ? (
+                        <MarkdownRenderer content={message.content} />
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm text-white/95 dark:text-white">
+                          {message.content}
+                        </p>
+                      )}
+
+                      {message.isStreaming && (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <SpinnerIcon className="h-3 w-3" />
+                          <span>Streaming...</span>
+                        </div>
+                      )}
+
+                      {isSystem && message.status === 'error' && (
+                        <div className="mt-3 flex items-start gap-2 text-sm">
+                          <WarningIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500 dark:text-red-300" />
+                          <span>An error occurred while generating the response.</span>
+                        </div>
+                      )}
+
+                      {isSystem && message.status === 'info' && (
+                        <div className="mt-3 flex items-start gap-2 text-sm text-blue-900 dark:text-blue-100">
+                          <InfoIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                          <span>This is a system update for your conversation.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {message.suggestions && message.suggestions.length > 0 && (
+                      <div className="w-full rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-left text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                        <p className="font-semibold">Actionable suggestions</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5">
+                          {message.suggestions.map((suggestion: string) => (
+                            <li key={suggestion}>{suggestion}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
-                  >
-                    {isRegenerating && (
-                      <span className="flex items-center gap-1 text-primary-600 dark:text-primary-300">
-                        <SpinnerIcon className="h-3 w-3" /> Regenerating...
-                      </span>
-                    )}
-                    <div className="flex flex-wrap items-center gap-1">
-                      <MessageActionButton
-                        label={isCopied ? 'Copied' : 'Copy message'}
-                        onClick={() => handleCopy(message)}
-                        icon={
-                          isCopied ? (
-                            <CheckIcon className="h-3.5 w-3.5" />
-                          ) : (
-                            <CopyIcon className="h-3.5 w-3.5" />
-                          )
-                        }
-                      />
 
-                      {(isAssistant || isSystem) && (
-                        <MessageActionButton
-                          label="Delete message"
-                          onClick={() => handleDelete(message)}
-                          icon={<TrashIcon className="h-3.5 w-3.5" />}
-                        />
+                    <div
+                      className={cn(
+                        'flex flex-wrap items-center gap-2 text-xs',
+                        isUser
+                          ? 'justify-end text-white/80'
+                          : 'justify-start text-gray-500 dark:text-gray-400'
                       )}
+                    >
+                      {isRegenerating && (
+                        <span className="flex items-center gap-1 text-primary-600 dark:text-primary-300">
+                          <SpinnerIcon className="h-3 w-3" /> Regenerating...
+                        </span>
+                      )}
+                      <div className="flex flex-wrap items-center gap-1">
+                        <MessageActionButton
+                          label={isCopied ? 'Copied' : 'Copy message'}
+                          onClick={() => handleCopy(message)}
+                          icon={
+                            isCopied ? (
+                              <CheckIcon className="h-3.5 w-3.5" />
+                            ) : (
+                              <CopyIcon className="h-3.5 w-3.5" />
+                            )
+                          }
+                        />
 
-                      {isUser && (
-                        <MessageActionButton
-                          label="Delete message"
-                          onClick={() => handleDelete(message)}
-                          icon={<TrashIcon className="h-3.5 w-3.5" />}
-                        />
-                      )}
+                        {(isAssistant || isSystem) && (
+                          <MessageActionButton
+                            label="Delete message"
+                            onClick={() => handleDelete(message)}
+                            icon={<TrashIcon className="h-3.5 w-3.5" />}
+                          />
+                        )}
 
-                      {isAssistant && (
-                        <MessageActionButton
-                          label="Regenerate response"
-                          onClick={() => handleRegenerate(message)}
-                          icon={<RefreshIcon className="h-3.5 w-3.5" />}
-                          disabled={isLoading}
-                        />
-                      )}
+                        {isUser && (
+                          <MessageActionButton
+                            label="Delete message"
+                            onClick={() => handleDelete(message)}
+                            icon={<TrashIcon className="h-3.5 w-3.5" />}
+                          />
+                        )}
 
-                      {isAssistant && (
-                        <MessageActionButton
-                          label="Mark response as helpful"
-                          onClick={() => handleFeedback(message, 'up')}
-                          icon={<ThumbUpIcon className="h-3.5 w-3.5" />}
-                          isActive={message.feedback === 'up'}
-                        />
-                      )}
+                        {isAssistant && (
+                          <MessageActionButton
+                            label="Regenerate response"
+                            onClick={() => handleRegenerate(message)}
+                            icon={<RefreshIcon className="h-3.5 w-3.5" />}
+                            disabled={isLoading}
+                          />
+                        )}
 
-                      {isAssistant && (
-                        <MessageActionButton
-                          label="Mark response as unhelpful"
-                          onClick={() => handleFeedback(message, 'down')}
-                          icon={<ThumbDownIcon className="h-3.5 w-3.5" />}
-                          isActive={message.feedback === 'down'}
-                        />
-                      )}
+                        {isAssistant && (
+                          <MessageActionButton
+                            label="Mark response as helpful"
+                            onClick={() => handleFeedback(message, 'up')}
+                            icon={<ThumbUpIcon className="h-3.5 w-3.5" />}
+                            isActive={message.feedback === 'up'}
+                          />
+                        )}
+
+                        {isAssistant && (
+                          <MessageActionButton
+                            label="Mark response as unhelpful"
+                            onClick={() => handleFeedback(message, 'down')}
+                            icon={<ThumbDownIcon className="h-3.5 w-3.5" />}
+                            isActive={message.feedback === 'down'}
+                          />
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            );
-          })
-        )}
+              );
+            })
+          )}
 
-        {(isLoading || isSubmitting || isStreaming) && (
-          <div className="flex justify-start">
-            <LoadingIndicator
-              isStreaming={isStreaming}
-              tokenCount={tokenCount}
-              onStop={isStreaming ? stopStream : undefined}
-            />
-          </div>
-        )}
+          {(isLoading || isSubmitting || isStreaming) && (
+            <div className="flex justify-start">
+              <LoadingIndicator
+                isStreaming={isStreaming}
+                tokenCount={tokenCount}
+                onStop={isStreaming ? stopStream : undefined}
+              />
+            </div>
+          )}
+        </div>
+
+        <footer className="border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
+          <ChatInput
+            key={initialMessage}
+            onSubmit={handleSendMessage}
+            isLoading={isSubmitting || isStreaming}
+            disabled={
+              !activeConversation || isSubmitting || isStreaming || (!isOnline && queueFull)
+            }
+            initialValue={initialMessage}
+            placeholder={
+              !isOnline
+                ? queueFull
+                  ? 'Queue full. Clear queue to send messages...'
+                  : 'Offline. Messages will be queued...'
+                : queueFull
+                  ? 'Queue full. Clear queue to send more messages...'
+                  : 'Type your message... (Shift+Enter for newline)'
+            }
+          />
+        </footer>
       </div>
-
-      <footer className="border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
-        <ChatInput
-          key={initialMessage}
-          onSubmit={handleSendMessage}
-          isLoading={isSubmitting || isStreaming}
-          disabled={!activeConversation || isSubmitting || isStreaming || (!isOnline && queueFull)}
-          initialValue={initialMessage}
-          placeholder={
-            !isOnline
-              ? queueFull
-                ? 'Queue full. Clear queue to send messages...'
-                : 'Offline. Messages will be queued...'
-              : queueFull
-                ? 'Queue full. Clear queue to send more messages...'
-                : 'Type your message... (Shift+Enter for newline)'
-          }
-        />
-      </footer>
-    </div>
+      <ConversationExportModal
+        isOpen={isExportModalOpen}
+        isExporting={isExporting}
+        onClose={handleCloseExportModal}
+        onConfirm={handleExportConversation}
+      />
+    </>
   );
 };
 
